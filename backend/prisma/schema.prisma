@@ -1,0 +1,65 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- Ensure your User model looks like this (especially the 'role' field) ---
+// Model for a User (likely exists from Fresh Start Guide - check/add 'role')
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String // Hashed password
+  name      String?
+  role      String   @default("PLAYER") // Role: PLAYER or ADMIN
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Add relations if needed later (e.g., predictions)
+}
+
+// --- ADD THESE NEW MODELS ---
+
+// Model for a Game Round
+model Round {
+  id          Int       @id @default(autoincrement()) // Unique ID for the round
+  name        String    // e.g., "Gameweek 1", "FA Cup Round 3"
+  startDate   DateTime  // When the round's first match starts
+  endDate     DateTime  // When the round's last match ends
+  status      String    @default("OPEN") // Status: OPEN, CLOSED, COMPLETED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relation: A Round can have many Fixtures
+  fixtures    Fixture[]
+}
+
+// Model for a Football Fixture (Match)
+model Fixture {
+  id            Int       @id @default(autoincrement()) // Unique ID for the fixture
+  matchDateTime DateTime  // Date and time of the match
+  homeTeam      String    // Name of the home team
+  awayTeam      String    // Name of the away team
+  homeScore     Int?      // Result: Home team score (null until result entered)
+  awayScore     Int?      // Result: Away team score (null until result entered)
+  status        String    @default("SCHEDULED") // Status: SCHEDULED, IN_PLAY, FINISHED, POSTPONED
+
+  // Relation: Which Round does this Fixture belong to?
+  roundId       Int       // Foreign key linking to the Round model
+  round         Round     @relation(fields: [roundId], references: [id]) // Defines the relationship
+
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Add relations if needed later (e.g., predictions for this fixture)
+}
+
+// --- END NEW MODELS ---
