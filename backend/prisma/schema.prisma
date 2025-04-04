@@ -1,8 +1,4 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+// backend/prisma/schema.prisma
 
 generator client {
   provider = "prisma-client-js"
@@ -10,56 +6,66 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("DATABASE_URL") // Reads from .env
 }
 
-// --- Ensure your User model looks like this (especially the 'role' field) ---
-// Model for a User (likely exists from Fresh Start Guide - check/add 'role')
 model User {
-  id        Int      @id @default(autoincrement())
-  email     String   @unique
-  password  String // Hashed password
-  name      String?
-  role      String   @default("PLAYER") // Role: PLAYER or ADMIN
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  // Add relations if needed later (e.g., predictions)
+  userId        Int       @id @default(autoincrement()) @map("user_id")
+  name          String
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  role          String    @default("PLAYER") // Assuming PLAYER/ADMIN roles
+  createdAt     DateTime  @default(now()) @map("created_at")
+  rounds        Round[]   @relation("CreatedBy") // Relation for created_by FK
+  predictions   Prediction[]
+
+  @@map("users") // Map model to lowercase 'users' table
 }
 
-// --- ADD THESE NEW MODELS ---
-
-// Model for a Game Round
 model Round {
-  id          Int       @id @default(autoincrement()) // Unique ID for the round
-  name        String    // e.g., "Gameweek 1", "FA Cup Round 3"
-  startDate   DateTime  // When the round's first match starts
-  endDate     DateTime  // When the round's last match ends
-  status      String    @default("OPEN") // Status: OPEN, CLOSED, COMPLETED
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  roundId       Int       @id @default(autoincrement()) @map("round_id")
+  name          String
+  deadline      DateTime
+  status        String    // 'SETUP', 'OPEN', 'CLOSED', 'COMPLETED'
+  createdByUserId Int     @map("created_by")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  fixtures      Fixture[]
+  predictions   Prediction[]
+  creator       User      @relation("CreatedBy", fields: [createdByUserId], references: [userId])
 
-  // Relation: A Round can have many Fixtures
-  fixtures    Fixture[]
+  @@map("rounds") // Map model to lowercase 'rounds' table
 }
 
-// Model for a Football Fixture (Match)
 model Fixture {
-  id            Int       @id @default(autoincrement()) // Unique ID for the fixture
-  matchDateTime DateTime  // Date and time of the match
-  homeTeam      String    // Name of the home team
-  awayTeam      String    // Name of the away team
-  homeScore     Int?      // Result: Home team score (null until result entered)
-  awayScore     Int?      // Result: Away team score (null until result entered)
-  status        String    @default("SCHEDULED") // Status: SCHEDULED, IN_PLAY, FINISHED, POSTPONED
+  fixtureId      Int       @id @default(autoincrement()) @map("fixture_id")
+  roundId        Int       @map("round_id")
+  homeTeam       String    @map("home_team")
+  awayTeam       String    @map("away_team")
+  matchTime      DateTime  @map("match_time")
+  homeScore      Int?      @map("home_score") // Nullable scores
+  awayScore      Int?      @map("away_score") // Nullable scores
+  createdAt      DateTime  @default(now()) @map("created_at")
+  round          Round     @relation(fields: [roundId], references: [roundId])
+  predictions    Prediction[]
 
-  // Relation: Which Round does this Fixture belong to?
-  roundId       Int       // Foreign key linking to the Round model
-  round         Round     @relation(fields: [roundId], references: [id]) // Defines the relationship
-
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  // Add relations if needed later (e.g., predictions for this fixture)
+  @@map("fixtures") // Map model to lowercase 'fixtures' table
 }
 
-// --- END NEW MODELS ---
+model Prediction {
+  predictionId        Int     @id @default(autoincrement()) @map("prediction_id")
+  userId              Int     @map("user_id")
+  fixtureId           Int     @map("fixture_id")
+  roundId             Int     @map("round_id")
+  predictedHomeGoals  Int     @map("predicted_home_goals")
+  predictedAwayGoals  Int     @map("predicted_away_goals")
+  pointsAwarded       Int?    @map("points_awarded") // Nullable points
+  isJoker             Boolean @default(false) @map("is_joker")
+  submittedAt         DateTime @default(now()) @map("submitted_at") // Or use @updatedAt
+  user                User    @relation(fields: [userId], references: [userId])
+  fixture             Fixture @relation(fields: [fixtureId], references: [fixtureId])
+  round               Round   @relation(fields: [roundId], references: [roundId])
+
+
+  @@unique([userId, fixtureId], map: "predictions_user_id_fixture_id_key") // Explicit map for constraint name
+  @@map("predictions") // Map model to lowercase 'predictions' table
+}
