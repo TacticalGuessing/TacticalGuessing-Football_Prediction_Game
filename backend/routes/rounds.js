@@ -263,10 +263,8 @@ router.get('/', protect, async (req, res, next) => {
     if (status) {
         queryString += ' WHERE status = $1';
         queryParams.push(status);
-        queryString += ' ORDER BY deadline DESC'; // Order for display
-    } else {
-        queryString += ' ORDER BY deadline DESC'; // Order for display
     }
+    queryString += ' ORDER BY deadline DESC'; // Always order
     try {
         // console.log(`Executing rounds query: ${queryString} with params: ${queryParams}`);
         const result = await db.query(queryString, queryParams);
@@ -563,6 +561,153 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
         client.release(); // Release client back to pool
     }
 });
+
+
+// --- NEW DELETE ROUND ROUTE ---
+// Placed after other admin round actions, before generic GET /:roundId
+router.delete('/:roundId', protect, admin, async (req, res, next) => {
+    const { roundId } = req.params;
+    const parsedRoundId = parseInt(roundId, 10);
+
+    console.log(`Attempting to delete round ID: ${parsedRoundId}`);
+
+    if (isNaN(parsedRoundId)) {
+        console.log('Delete failed: Invalid round ID format.');
+        return res.status(400).json({ message: 'Round ID must be an integer.' });
+    }
+
+    // Optional: Add checks here? E.g., prevent deleting OPEN/CLOSED/COMPLETED rounds?
+    // const checkStatus = await db.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+    // if (checkStatus.rows.length > 0 && checkStatus.rows[0].status !== 'SETUP') {
+    //     return res.status(400).json({ message: `Cannot delete round with status: ${checkStatus.rows[0].status}. Only SETUP rounds can be deleted.` });
+    // }
+
+    const client = await db.pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Delete associated predictions first (using round_id)
+         const predictionDeleteResult = await client.query(
+             'DELETE FROM predictions WHERE round_id = $1',
+             [parsedRoundId]
+         );
+         console.log(`Deleted ${predictionDeleteResult.rowCount} associated prediction(s) for round ${parsedRoundId}.`);
+
+        // 2. Delete associated fixtures
+        const fixtureDeleteResult = await client.query(
+            'DELETE FROM fixtures WHERE round_id = $1',
+            [parsedRoundId]
+        );
+        console.log(`Deleted ${fixtureDeleteResult.rowCount} associated fixture(s) for round ${parsedRoundId}.`);
+
+        // 3. Delete the round itself
+        const roundDeleteResult = await client.query(
+            'DELETE FROM rounds WHERE round_id = $1',
+            [parsedRoundId]
+        );
+
+        // 4. Check if the round was found and deleted
+        if (roundDeleteResult.rowCount === 0) {
+            await client.query('ROLLBACK');
+            console.log(`Delete failed: Round ID ${parsedRoundId} not found.`);
+            return res.status(404).json({ message: 'Round not found.' });
+        }
+
+        // 5. Commit
+        await client.query('COMMIT');
+        console.log(`Successfully deleted round ID ${parsedRoundId} and associated data.`);
+
+        // 6. Respond 204 No Content
+        res.status(204).send();
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`Error deleting round ${parsedRoundId}:`, error);
+        next(error);
+    } finally {
+        client.release();
+    }
+});
+// --- END DELETE ROUND ROUTE ---
+
+// --- NEW GENERATE RANDOM RESULTS ROUTE ---
+// Should be placed within the parameterized routes section
+router.post('/:roundId/fixtures/random-results', protect, admin, async (req, res, next) => {
+    const { roundId } = req.params;
+    const parsedRoundId = parseInt(roundId, 10);
+
+    console.log(`Attempting to generate random results for round ID: ${parsedRoundId}`);
+
+    if (isNaN(parsedRoundId)) {
+        console.log('Generate results failed: Invalid round ID format.');
+        return res.status(400).json({ message: 'Round ID must be an integer.' });
+    }
+
+    const client = await db.pool.connect();
+
+    try {
+        // 1. Check if round exists and is not COMPLETED (optional check)
+        const roundCheck = await client.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+        if (roundCheck.rows.length === 0) {
+            client.release();
+            return res.status(404).json({ message: 'Round not found.' });
+        }
+        // Optional: Prevent if already completed
+        // if (roundCheck.rows[0].status === 'COMPLETED') {
+        //    client.release();
+        //    return res.status(400).json({ message: 'Cannot generate results for a COMPLETED round.' });
+        // }
+
+        // 2. Get all fixture IDs for this round
+        const fixturesResult = await client.query(
+            'SELECT fixture_id FROM fixtures WHERE round_id = $1',
+            [parsedRoundId]
+        );
+
+        if (fixturesResult.rows.length === 0) {
+            client.release();
+            console.log(`No fixtures found for round ${parsedRoundId}. No results generated.`);
+            return res.status(200).json({ message: 'No fixtures found in this round to generate results for.', count: 0 });
+        }
+
+        const fixtureIds = fixturesResult.rows.map(row => row.fixture_id);
+
+        // 3. Update fixtures with random scores within a transaction
+        await client.query('BEGIN');
+        let updatedCount = 0;
+        const maxScore = 4; // Max random score (0-4)
+
+        for (const fixtureId of fixtureIds) {
+            const randomHomeScore = Math.floor(Math.random() * (maxScore + 1));
+            const randomAwayScore = Math.floor(Math.random() * (maxScore + 1));
+
+            const updateResult = await client.query(
+                `UPDATE fixtures
+                 SET home_score = $1, away_score = $2, status = 'FINISHED'
+                 WHERE fixture_id = $3`,
+                [randomHomeScore, randomAwayScore, fixtureId]
+            );
+            if (updateResult.rowCount > 0) {
+                updatedCount++;
+            }
+        }
+
+        await client.query('COMMIT');
+        console.log(`Successfully generated random results for ${updatedCount} fixtures in round ${parsedRoundId}.`);
+
+        // 4. Respond Success
+        res.status(200).json({ message: `Generated random results for ${updatedCount} fixtures.`, count: updatedCount });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`Error generating random results for round ${parsedRoundId}:`, error);
+        next(error);
+    } finally {
+        client.release();
+    }
+});
+// --- END GENERATE RANDOM RESULTS ROUTE ---
 
 
 // GET /api/rounds/:roundId - Get details for a specific round, including fixtures (public info, but protected)

@@ -137,7 +137,7 @@ export interface ImportFixturesPayload {
 }
 
 // Response type for importing fixtures
-export interface ImportFixturesResponse {
+export interface ImportFixturesResponse { // Keep this defined if used elsewhere
     message: string;
     count: number;
 }
@@ -414,6 +414,43 @@ export const addFixture = async (roundId: number, fixtureData: AddFixturePayload
 };
 
 /**
+ * Deletes a specific fixture and its associated predictions (Admin).
+ * Requires admin authentication.
+ * @param fixtureId - The ID of the fixture to delete.
+ * @param token - The user's JWT authentication token.
+ * @returns Promise<void>
+ * @throws Throws an error if the API call fails.
+ */
+export const deleteFixture = async (fixtureId: number, token: string): Promise<void> => {
+    const endpoint = `/fixtures/${fixtureId}`; // Matches backend DELETE route
+
+    try {
+        const response = await fetchWithAuth(endpoint, { method: 'DELETE' }, token);
+
+        // Expecting 204 No Content on success. fetchWithAuth handles non-ok statuses.
+        if (response.status !== 204) {
+            // Optional: Handle unexpected success statuses if needed
+            console.warn(`Delete fixture responded with unexpected status: ${response.status}`);
+            // Attempt to read body for more info if available
+             try {
+                 const body = await response.text();
+                 throw new Error(`Delete fixture responded with status ${response.status}: ${body}`);
+             } catch {
+                 throw new Error(`Delete fixture responded with status ${response.status}`);
+             }
+        }
+        // No return needed for 204
+    } catch (error: unknown) {
+        console.error(`Error deleting fixture ${fixtureId}:`, error);
+        if (error instanceof Error) {
+            throw error; // Re-throw the formatted error
+        } else {
+            throw new Error('An unknown error occurred while deleting the fixture.');
+        }
+    }
+};
+
+/**
  * Submits the result for a specific fixture.
  * Requires admin authentication. Returns the updated fixture mapped to camelCase.
  */
@@ -429,27 +466,18 @@ export const enterFixtureResult = async (fixtureId: number, payload: ResultPaylo
         }, token);
 
         if (response.status === 204) {
-            // If backend returns 204, we can't return the updated fixture.
-            // This might require a subsequent fetch or indicate an issue.
-            // For now, throwing an error might be clearest.
             throw new Error("Fixture result updated successfully, but no updated data was returned (Status 204).");
-            // Or fetch the fixture again: return getFixtureById(fixtureId, token);
         }
         if (response.headers.get('content-type')?.includes('application/json')) {
              const updatedRaw = await response.json();
-             // Map response from snake_case to camelCase Fixture
              return toCamelCase<Fixture>(updatedRaw);
         }
-        // If response was OK, but not 204 and not JSON, throw error
         throw new Error(`Fixture result update responded with status ${response.status} but unexpected content type.`);
 
     } catch (error: unknown) {
         console.error(`Error submitting result for fixture ${fixtureId}:`, error);
-        if (error instanceof Error) {
-             throw error; // Re-throw the original formatted error
-        } else {
-             throw new Error('An unknown error occurred while submitting the fixture result.');
-        }
+        if (error instanceof Error) { throw error; }
+        else { throw new Error('An unknown error occurred while submitting the fixture result.'); }
     }
 };
 
@@ -458,61 +486,104 @@ export const enterFixtureResult = async (fixtureId: number, payload: ResultPaylo
  * Requires admin authentication. Backend handles score calculation and status update.
  */
 export const triggerScoring = async (roundId: number, token: string): Promise<void> => {
-    // Backend endpoint is POST /rounds/:roundId/score (from rounds.js)
-    const endpoint = `/rounds/${roundId}/score`;
-
+    const endpoint = `/rounds/${roundId}/score`; // Backend endpoint
     try {
         await fetchWithAuth(endpoint, { method: 'POST' }, token);
-        // Expecting 200 OK with message, fetchWithAuth handles errors
         console.log(`Scoring triggered successfully for round ${roundId}`);
     } catch (error: unknown) {
         console.error(`Error triggering scoring for round ${roundId}:`, error);
-        if (error instanceof Error) {
-            throw error; // Re-throw the formatted error
-        } else {
-            throw new Error('An unknown error occurred while triggering scoring.');
-        }
+        if (error instanceof Error) { throw error; }
+        else { throw new Error('An unknown error occurred while triggering scoring.'); }
     }
 };
 
 /**
  * Imports fixtures for a specific round from an external API (football-data.org).
  * Requires admin authentication.
- * @param payload - The import details { roundId, competitionCode, matchday }.
- * @param token - The user's JWT authentication token.
- * @returns Promise<ImportFixturesResponse> - Contains success message and count.
- * @throws Throws an error if the API call fails.
  */
-export const importFixtures = async (payload: ImportFixturesPayload, token: string): Promise<ImportFixturesResponse> => {
-    // Backend endpoint is POST /rounds/import/fixtures (from rounds.js)
-    const endpoint = '/rounds/import/fixtures';
-
+// Using specific return type inline as ImportFixturesResponse might be removed
+export const importFixtures = async (payload: ImportFixturesPayload, token: string): Promise<{ message: string; count: number }> => {
+    const endpoint = '/rounds/import/fixtures'; // Backend endpoint
     try {
-        const response = await fetchWithAuth(endpoint, {
-            method: 'POST',
-            body: JSON.stringify(payload), // Send camelCase payload
-        }, token);
-
-        // Expecting 201 Created on success with a JSON body containing { message, count }
-        if (response.status === 201 && response.headers.get('content-type')?.includes('application/json')) {
-            // Backend sends simple JSON { message, count }, no case mapping needed
-            return response.json() as Promise<ImportFixturesResponse>;
-        } else if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
-             // Handle case where API found 0 matches and backend returned 200 OK with { message, count: 0 }
-              return response.json() as Promise<ImportFixturesResponse>;
+        const response = await fetchWithAuth(endpoint, { method: 'POST', body: JSON.stringify(payload) }, token);
+        if ((response.status === 201 || response.status === 200) && response.headers.get('content-type')?.includes('application/json')) {
+            return response.json(); // Let TS infer { message, count }
         } else {
-            // Handle unexpected success status codes or non-JSON responses
-            // fetchWithAuth already threw for non-ok statuses (4xx, 5xx)
              let responseBody = '';
              try { responseBody = await response.text(); } catch { /* ignore */ }
              throw new Error(`Fixture import responded with status ${response.status} but unexpected content: ${responseBody.substring(0, 100)}`);
         }
     } catch (error: unknown) {
         console.error(`Error importing fixtures for round ${payload.roundId}:`, error);
-        if (error instanceof Error) {
-            throw error; // Re-throw the formatted error from fetchWithAuth or above
+        if (error instanceof Error) { throw error; }
+        else { throw new Error('An unknown error occurred while importing fixtures.'); }
+    }
+};
+
+/**
+ * Triggers the generation of random results for all fixtures in a given round (Admin).
+ * Sets fixtures to FINISHED status.
+ * @param roundId - The ID of the round.
+ * @param token - The user's JWT authentication token.
+ * @returns Promise<{ message: string; count: number }> - Success message and count of updated fixtures.
+ * @throws Throws an error if the API call fails.
+ */
+export const generateRandomResults = async (roundId: number, token: string): Promise<{ message: string; count: number }> => {
+    // Endpoint matches the new backend POST route in rounds.js
+    const endpoint = `/rounds/${roundId}/fixtures/random-results`;
+
+    try {
+        // This action doesn't need a request body
+        const response = await fetchWithAuth(endpoint, { method: 'POST' }, token);
+
+        // Expecting 200 OK on success with a JSON body { message, count }
+        if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
+             return response.json(); // Let TS infer return type
         } else {
-            throw new Error('An unknown error occurred while importing fixtures.');
+             console.warn(`Generate random results responded with unexpected status: ${response.status}`);
+             let responseBody = '';
+             try { responseBody = await response.text(); } catch { /* ignore */ }
+             throw new Error(`Generate random results responded with status ${response.status} but unexpected content: ${responseBody.substring(0, 100)}`);
+        }
+    } catch (error: unknown) {
+        console.error(`Error generating random results for round ${roundId}:`, error);
+        if (error instanceof Error) {
+            throw error; // Re-throw the formatted error
+        } else {
+            throw new Error('An unknown error occurred while generating random results.');
         }
     }
 };
+
+// *** ADD DELETE ROUND FUNCTION HERE ***
+/**
+ * Deletes a specific round and its associated fixtures and predictions (Admin).
+ * Requires admin authentication.
+ * @param roundId - The ID of the round to delete.
+ * @param token - The user's JWT authentication token.
+ * @returns Promise<void>
+ * @throws Throws an error if the API call fails.
+ */
+export const deleteRound = async (roundId: number, token: string): Promise<void> => {
+    const endpoint = `/rounds/${roundId}`; // Matches backend DELETE route
+
+    try {
+        const response = await fetchWithAuth(endpoint, { method: 'DELETE' }, token);
+
+        if (response.status !== 204) { // Expect 204 No Content on success
+            console.warn(`Delete round responded with unexpected status: ${response.status}`);
+             try {
+                 const body = await response.text();
+                 throw new Error(`Delete round responded with status ${response.status}: ${body}`);
+             } catch {
+                 throw new Error(`Delete round responded with status ${response.status}`);
+             }
+        }
+        // No return needed for 204
+    } catch (error: unknown) {
+        console.error(`Error deleting round ${roundId}:`, error);
+        if (error instanceof Error) { throw error; } // Re-throw formatted error
+        else { throw new Error('An unknown error occurred while deleting the round.'); }
+    }
+};
+// *** END ADD DELETE ROUND FUNCTION ***

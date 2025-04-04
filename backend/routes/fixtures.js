@@ -29,11 +29,9 @@ router.put('/:fixtureId/result', protect, admin, async (req, res, next) => {
     if (
         homeScore === undefined || // Check if camelCase key existed
         isNaN(homeScoreInt) ||
-        // Optional stricter check: String(homeScore) !== String(homeScoreInt) || // Could fail if frontend sends number
         homeScoreInt < 0 ||
         awayScore === undefined || // Check if camelCase key existed
         isNaN(awayScoreInt) ||
-        // Optional stricter check: String(awayScore) !== String(awayScoreInt) ||
         awayScoreInt < 0
        ) {
         // Updated error message slightly for clarity
@@ -64,9 +62,10 @@ router.put('/:fixtureId/result', protect, admin, async (req, res, next) => {
         */
 
         // Update the fixture using DB column names (snake_case)
+        // Also update status to 'FINISHED'
         const updateQuery = `
             UPDATE fixtures
-            SET home_score = $1, away_score = $2
+            SET home_score = $1, away_score = $2, status = 'FINISHED'
             WHERE fixture_id = $3
             RETURNING *; -- Return the updated fixture row (uses DB column names)
         `;
@@ -88,7 +87,65 @@ router.put('/:fixtureId/result', protect, admin, async (req, res, next) => {
         console.error(`Error updating result for fixture ${parsedFixtureId}:`, error);
         next(error); // Pass to global error handler
     }
+}); // <<< Closing bracket for the PUT route handler
+
+
+// --- NEW DELETE FIXTURE ROUTE ---
+// *** ENSURE THIS IS SEPARATE FROM THE PUT ROUTE ABOVE ***
+router.delete('/:fixtureId', protect, admin, async (req, res, next) => {
+    const { fixtureId } = req.params;
+    const parsedFixtureId = parseInt(fixtureId, 10);
+
+    console.log(`Attempting to delete fixture ID: ${parsedFixtureId}`); // Log entry
+
+    if (isNaN(parsedFixtureId)) {
+        console.log('Delete failed: Invalid fixture ID format.');
+        return res.status(400).json({ message: 'Fixture ID must be an integer.' });
+    }
+
+    const client = await db.pool.connect(); // Use pool for transaction
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Delete associated predictions (handle potential orphans)
+        const predictionDeleteResult = await client.query(
+            'DELETE FROM predictions WHERE fixture_id = $1',
+            [parsedFixtureId]
+        );
+        console.log(`Deleted ${predictionDeleteResult.rowCount} associated prediction(s) for fixture ${parsedFixtureId}.`);
+
+        // 2. Delete the fixture itself
+        const fixtureDeleteResult = await client.query(
+            'DELETE FROM fixtures WHERE fixture_id = $1',
+            [parsedFixtureId]
+        );
+
+        // 3. Check if the fixture was actually found and deleted
+        if (fixtureDeleteResult.rowCount === 0) {
+            await client.query('ROLLBACK'); // Rollback transaction
+            console.log(`Delete failed: Fixture ID ${parsedFixtureId} not found.`);
+            return res.status(404).json({ message: 'Fixture not found.' });
+        }
+
+        // 4. Commit the transaction
+        await client.query('COMMIT');
+        console.log(`Successfully deleted fixture ID ${parsedFixtureId} and associated predictions.`);
+
+        // Send success response - 204 No Content is standard for successful DELETE
+        res.status(204).send();
+
+    } catch (error) {
+        // Rollback transaction on any error
+        await client.query('ROLLBACK');
+        console.error(`Error deleting fixture ${parsedFixtureId}:`, error);
+        next(error); // Pass error to global handler
+    } finally {
+        client.release(); // Release client back to pool
+    }
 });
+// --- END DELETE FIXTURE ROUTE ---
+
 
 // Other potential fixture-related routes can be added here later
 
