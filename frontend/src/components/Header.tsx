@@ -14,7 +14,9 @@ export default function Header() {
     };
 
     return (
-        <header className="bg-gray-800 text-white shadow-md">
+        // ***** UPDATED LINE *****
+        // Added sticky, top-0, and z-50 to make the header stick to the top
+        <header className="bg-gray-800 text-white shadow-md sticky top-0 z-50">
             <nav className="container mx-auto px-4 py-3 flex justify-between items-center">
                 {/* Left Side: Logo/Brand */}
                 <div className="text-xl font-bold">

@@ -56,22 +56,24 @@ function calculatePoints(prediction, actualResult) {
 
 // POST /api/rounds - Create a new round
 router.post('/', protect, admin, async (req, res, next) => {
-    const { name, deadline } = req.body; // Expect name (string) and deadline (ISO 8601 string e.g., "2024-08-15T18:00:00Z")
+    const { name, deadline } = req.body; // Expect name (string) and deadline (ISO 8601 string e.g., "2024-08-15T18:00:00Z" or YYYY-MM-DDTHH:MM)
 
     if (!name || !deadline) {
         return res.status(400).json({ message: 'Round name and deadline are required.' });
     }
 
     const deadlineDate = new Date(deadline);
-    if (isNaN(deadlineDate)) {
-        return res.status(400).json({ message: 'Invalid deadline format. Use ISO 8601 format.' });
+    if (isNaN(deadlineDate.getTime())) { // Check getTime() for validity
+        return res.status(400).json({ message: 'Invalid deadline format. Use ISO 8601 or YYYY-MM-DDTHH:MM format.' });
     }
+    // Convert to UTC ISO string for database consistency
+    const deadlineISO = deadlineDate.toISOString();
 
     try {
         // Use db.query directly as we don't need a transaction here
         const newRound = await db.query(
-            'INSERT INTO rounds (name, deadline, created_by, status) VALUES ($1, $2, $3, $4) RETURNING *',
-            [name, deadlineDate, req.user.userId, 'SETUP'] // Default status to SETUP
+            'INSERT INTO rounds (name, deadline, created_by, status, created_at, updated_at) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING *',
+            [name, deadlineISO, req.user.userId, 'SETUP'] // Default status to SETUP
         );
         res.status(201).json(newRound.rows[0]); // Returns snake_case from DB
     } catch (err) {
@@ -87,7 +89,6 @@ router.post('/', protect, admin, async (req, res, next) => {
 
 // --- Fixture Import (Admin Only) ---
 // POST /api/rounds/import/fixtures - Import fixtures from football-data.org (Admin only)
-// ** MOVED EARLIER **
 router.post('/import/fixtures', protect, admin, async (req, res, next) => {
     // Log incoming request body and types
     console.log('--- Received /import/fixtures request ---');
@@ -254,7 +255,6 @@ router.post('/import/fixtures', protect, admin, async (req, res, next) => {
 // --- Public/Player Access (Non-Parameterized) ---
 
 // GET /api/rounds - Get list of rounds, optionally filtered by status
-// ** MOVED EARLIER **
 router.get('/', protect, async (req, res, next) => {
     const { status } = req.query;
     // Return minimal info needed for lists
@@ -277,7 +277,6 @@ router.get('/', protect, async (req, res, next) => {
 });
 
 // GET /api/rounds/active - Get the single currently active round (status='OPEN') and its fixtures, including user's predictions
-// ** MOVED EARLIER **
 router.get('/active', protect, async (req, res, next) => {
     try {
         // Fetch active round (snake_case)
@@ -368,9 +367,7 @@ router.get('/active', protect, async (req, res, next) => {
 // === Parameterized Routes (:roundId) Last ===
 // ======================================================
 
-
-// PUT /api/rounds/:roundId/status - Update round status (e.g., open, close it)
-// ** MOVED LATER **
+// PUT /api/rounds/:roundId/status - Update round status (e.g., open, close it) (Admin Only)
 router.put('/:roundId/status', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const { status } = req.body; // Expect status: 'SETUP', 'OPEN', 'CLOSED', 'COMPLETED'
@@ -380,15 +377,15 @@ router.put('/:roundId/status', protect, admin, async (req, res, next) => {
         return res.status(400).json({ message: 'Round ID must be an integer.' });
     }
 
-    // Added 'SETUP' to valid statuses
-    if (!status || !['SETUP', 'OPEN', 'CLOSED', 'COMPLETED'].includes(status)) {
-        return res.status(400).json({ message: 'Invalid status provided. Use SETUP, OPEN, CLOSED, or COMPLETED.' });
+    // Added 'SETUP' to valid statuses, removed 'COMPLETED' as it's set by scoring
+    if (!status || !['SETUP', 'OPEN', 'CLOSED'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid status provided. Use SETUP, OPEN, or CLOSED.' });
     }
 
     try {
         // Use db.query directly
         const result = await db.query(
-            'UPDATE rounds SET status = $1 WHERE round_id = $2 RETURNING *',
+            'UPDATE rounds SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE round_id = $2 RETURNING *', // Add updated_at
             [status, parsedRoundId]
         );
         if (result.rows.length === 0) {
@@ -402,8 +399,7 @@ router.put('/:roundId/status', protect, admin, async (req, res, next) => {
 });
 
 
-// POST /api/rounds/:roundId/fixtures - Add a fixture to a specific round MANUALLY
-// ** MOVED LATER **
+// POST /api/rounds/:roundId/fixtures - Add a fixture to a specific round MANUALLY (Admin Only)
 router.post('/:roundId/fixtures', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     // Expecting camelCase from frontend AddFixturePayload type
@@ -422,9 +418,13 @@ router.post('/:roundId/fixtures', protect, admin, async (req, res, next) => {
     let matchTimeDate = null;
     if (matchTime) { // Use camelCase variable
         matchTimeDate = new Date(matchTime); // Parse ISO string
-        if (isNaN(matchTimeDate)) {
+        if (isNaN(matchTimeDate.getTime())) { // Check getTime()
             return res.status(400).json({ message: 'Invalid matchTime format. Use ISO 8601 format.' });
         }
+    } else {
+        // Handle case where matchTime is not provided? Set a default or require it?
+        // For now, let's assume it might be optional and DB allows NULL or has default
+        console.warn(`Match time not provided for fixture in round ${parsedRoundId}.`);
     }
 
     try {
@@ -439,7 +439,7 @@ router.post('/:roundId/fixtures', protect, admin, async (req, res, next) => {
 
         // Insert using DB column names (home_team, away_team, match_time) and camelCase variables from body
         const newFixture = await db.query(
-            'INSERT INTO fixtures (round_id, home_team, away_team, match_time, status) VALUES ($1, $2, $3, $4, $5) RETURNING *', // Added default status
+            'INSERT INTO fixtures (round_id, home_team, away_team, match_time, status, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING *', // Added default status and timestamps
             [parsedRoundId, homeTeam, awayTeam, matchTimeDate, 'SCHEDULED'] // Set default status
         );
         // Return snake_case from DB; frontend api.ts handles mapping if needed
@@ -452,7 +452,6 @@ router.post('/:roundId/fixtures', protect, admin, async (req, res, next) => {
 
 
 // GET /api/rounds/:roundId/fixtures - Get all fixtures for a specific round (Admin access)
-// ** MOVED LATER **
 router.get('/:roundId/fixtures', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const parsedRoundId = parseInt(roundId, 10);
@@ -494,7 +493,6 @@ router.get('/:roundId/fixtures', protect, admin, async (req, res, next) => {
 
 
 // POST /api/rounds/:roundId/score - Trigger scoring for a round (Admin only)
-// ** MOVED LATER **
 router.post('/:roundId/score', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const parsedRoundId = parseInt(roundId, 10);
@@ -509,7 +507,7 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
         await client.query('BEGIN'); // Start transaction
 
         // 1. --- Prerequisite Checks ---
-        const roundResult = await client.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+        const roundResult = await client.query('SELECT status FROM rounds WHERE round_id = $1 FOR UPDATE', [parsedRoundId]); // Add FOR UPDATE
         if (roundResult.rows.length === 0) {
             await client.query('ROLLBACK'); client.release(); return res.status(404).json({ message: 'Round not found.' });
         }
@@ -543,13 +541,14 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
                 if (!actualResult) { console.error(`Critical Error: Actual result not found for fixture ${prediction.fixture_id}. Prediction ${prediction.prediction_id} will NOT be scored.`); return Promise.resolve(); }
                 const points = calculatePoints(prediction, actualResult);
                 // Assuming 'points_awarded' is the column name in your predictions table
-                return client.query( 'UPDATE predictions SET points_awarded = $1 WHERE prediction_id = $2', [points, prediction.prediction_id] );
+                // Also update the updated_at timestamp for the prediction
+                return client.query( 'UPDATE predictions SET points_awarded = $1, updated_at = CURRENT_TIMESTAMP WHERE prediction_id = $2', [points, prediction.prediction_id] );
              });
              await Promise.all(updatePromises);
         }
 
         // 4. --- Update Round Status to COMPLETED ---
-        await client.query( "UPDATE rounds SET status = 'COMPLETED' WHERE round_id = $1", [parsedRoundId] );
+        await client.query( "UPDATE rounds SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE round_id = $1", [parsedRoundId] ); // Add updated_at
         // 5. --- Commit Transaction ---
         await client.query('COMMIT');
         res.status(200).json({ message: `Scoring completed successfully for round ${parsedRoundId}. Status updated to COMPLETED.` });
@@ -563,8 +562,84 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
 });
 
 
-// --- NEW DELETE ROUND ROUTE ---
-// Placed after other admin round actions, before generic GET /:roundId
+// POST /api/rounds/:roundId/fixtures/random-results - Generate random results (Admin Only)
+router.post('/:roundId/fixtures/random-results', protect, admin, async (req, res, next) => {
+    const { roundId } = req.params;
+    const parsedRoundId = parseInt(roundId, 10);
+
+    console.log(`Attempting to generate random results for round ID: ${parsedRoundId}`);
+
+    if (isNaN(parsedRoundId)) {
+        console.log('Generate results failed: Invalid round ID format.');
+        return res.status(400).json({ message: 'Round ID must be an integer.' });
+    }
+
+    const client = await db.pool.connect();
+
+    try {
+        // 1. Check if round exists and is not COMPLETED (optional check)
+        const roundCheck = await client.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+        if (roundCheck.rows.length === 0) {
+            client.release();
+            return res.status(404).json({ message: 'Round not found.' });
+        }
+        // Optional: Prevent if already completed
+        // if (roundCheck.rows[0].status === 'COMPLETED') {
+        //    client.release();
+        //    return res.status(400).json({ message: 'Cannot generate results for a COMPLETED round.' });
+        // }
+
+        // 2. Get all fixture IDs for this round
+        const fixturesResult = await client.query(
+            'SELECT fixture_id FROM fixtures WHERE round_id = $1',
+            [parsedRoundId]
+        );
+
+        if (fixturesResult.rows.length === 0) {
+            client.release();
+            console.log(`No fixtures found for round ${parsedRoundId}. No results generated.`);
+            return res.status(200).json({ message: 'No fixtures found in this round to generate results for.', count: 0 });
+        }
+
+        const fixtureIds = fixturesResult.rows.map(row => row.fixture_id);
+
+        // 3. Update fixtures with random scores within a transaction
+        await client.query('BEGIN');
+        let updatedCount = 0;
+        const maxScore = 4; // Max random score (0-4)
+
+        for (const fixtureId of fixtureIds) {
+            const randomHomeScore = Math.floor(Math.random() * (maxScore + 1));
+            const randomAwayScore = Math.floor(Math.random() * (maxScore + 1));
+
+            const updateResult = await client.query(
+                `UPDATE fixtures
+                 SET home_score = $1, away_score = $2, status = 'FINISHED', updated_at = CURRENT_TIMESTAMP
+                 WHERE fixture_id = $3`, // Add updated_at
+                [randomHomeScore, randomAwayScore, fixtureId]
+            );
+            if (updateResult.rowCount > 0) {
+                updatedCount++;
+            }
+        }
+
+        await client.query('COMMIT');
+        console.log(`Successfully generated random results for ${updatedCount} fixtures in round ${parsedRoundId}.`);
+
+        // 4. Respond Success
+        res.status(200).json({ message: `Generated random results for ${updatedCount} fixtures.`, count: updatedCount });
+
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error(`Error generating random results for round ${parsedRoundId}:`, error);
+        next(error);
+    } finally {
+        client.release();
+    }
+});
+
+
+// DELETE /api/rounds/:roundId - Delete a round and associated data (Admin Only)
 router.delete('/:roundId', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const parsedRoundId = parseInt(roundId, 10);
@@ -631,94 +706,129 @@ router.delete('/:roundId', protect, admin, async (req, res, next) => {
 });
 // --- END DELETE ROUND ROUTE ---
 
-// --- NEW GENERATE RANDOM RESULTS ROUTE ---
-// Should be placed within the parameterized routes section
-router.post('/:roundId/fixtures/random-results', protect, admin, async (req, res, next) => {
+// ========== NEW PUT ROUTE HANDLER STARTS HERE ==========
+/**
+ * @route   PUT /api/rounds/:roundId
+ * @desc    Update round details (name, deadline)
+ * @access  Private (Admin only)
+ */
+router.put('/:roundId', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
+    const { name, deadline } = req.body; // Expect camelCase from frontend api.ts
+
+    // 1. Validate Round ID
     const parsedRoundId = parseInt(roundId, 10);
-
-    console.log(`Attempting to generate random results for round ID: ${parsedRoundId}`);
-
     if (isNaN(parsedRoundId)) {
-        console.log('Generate results failed: Invalid round ID format.');
-        return res.status(400).json({ message: 'Round ID must be an integer.' });
+        return res.status(400).json({ message: 'Invalid Round ID.' });
     }
 
-    const client = await db.pool.connect();
+    // 2. Validate Payload Fields (if they are provided)
+    if (name !== undefined && (typeof name !== 'string' || name.trim() === '')) {
+        // Allow empty string? For now, require non-empty if provided. Adjust if needed.
+        return res.status(400).json({ message: 'If provided, round name must be a non-empty string.' });
+    }
 
+    let deadlineISO = null; // Variable to hold the correctly formatted deadline for DB
+    if (deadline !== undefined) {
+        // The 'deadline' from frontend is expected to be in 'YYYY-MM-DDTHH:MM' format (local time) or full ISO
+        // We need to parse this and convert it to a full ISO 8601 string (UTC) for the database.
+        const parsedDate = new Date(deadline); // This parses the local datetime string or ISO string
+        if (isNaN(parsedDate.getTime())) { // Check getTime() for validity
+            return res.status(400).json({ message: 'Invalid deadline format. Expected format like YYYY-MM-DDTHH:MM or ISO 8601.' });
+        }
+        // Convert the parsed date (which represents local time) to a UTC ISO string
+        deadlineISO = parsedDate.toISOString();
+        console.log(`Received deadline "${deadline}", converted to UTC ISO: "${deadlineISO}" for round ${parsedRoundId}`);
+    }
+
+    // 3. Check if Round Exists and Apply Business Logic (e.g., status checks)
     try {
-        // 1. Check if round exists and is not COMPLETED (optional check)
-        const roundCheck = await client.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+        const roundCheck = await db.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
         if (roundCheck.rows.length === 0) {
-            client.release();
-            return res.status(404).json({ message: 'Round not found.' });
+            return res.status(404).json({ message: `Round with ID ${parsedRoundId} not found.` });
         }
-        // Optional: Prevent if already completed
-        // if (roundCheck.rows[0].status === 'COMPLETED') {
-        //    client.release();
-        //    return res.status(400).json({ message: 'Cannot generate results for a COMPLETED round.' });
-        // }
+        const currentStatus = roundCheck.rows[0].status;
 
-        // 2. Get all fixture IDs for this round
-        const fixturesResult = await client.query(
-            'SELECT fixture_id FROM fixtures WHERE round_id = $1',
-            [parsedRoundId]
-        );
-
-        if (fixturesResult.rows.length === 0) {
-            client.release();
-            console.log(`No fixtures found for round ${parsedRoundId}. No results generated.`);
-            return res.status(200).json({ message: 'No fixtures found in this round to generate results for.', count: 0 });
+        // --- Optional Business Logic: Status Restrictions ---
+        // Example: Disallow changing deadline if round is not in SETUP
+        if (deadlineISO && currentStatus !== 'SETUP') {
+           console.warn(`Attempted to change deadline for round ${parsedRoundId} with status ${currentStatus}. Allowed for now, but consider restricting.`);
+           // Uncomment below to restrict:
+           // return res.status(400).json({ message: `Deadline cannot be changed once a round is '${currentStatus}'. Only allowed in 'SETUP' status.` });
         }
+        // Add more restrictions if needed (e.g., maybe name changes are also restricted after SETUP)
 
-        const fixtureIds = fixturesResult.rows.map(row => row.fixture_id);
+        // 4. Construct Dynamic UPDATE Query
+        const fieldsToUpdate = [];
+        const queryParams = [];
+        let paramIndex = 1;
 
-        // 3. Update fixtures with random scores within a transaction
-        await client.query('BEGIN');
-        let updatedCount = 0;
-        const maxScore = 4; // Max random score (0-4)
-
-        for (const fixtureId of fixtureIds) {
-            const randomHomeScore = Math.floor(Math.random() * (maxScore + 1));
-            const randomAwayScore = Math.floor(Math.random() * (maxScore + 1));
-
-            const updateResult = await client.query(
-                `UPDATE fixtures
-                 SET home_score = $1, away_score = $2, status = 'FINISHED'
-                 WHERE fixture_id = $3`,
-                [randomHomeScore, randomAwayScore, fixtureId]
-            );
-            if (updateResult.rowCount > 0) {
-                updatedCount++;
-            }
+        // Only add fields to the update query if they were actually provided in the payload
+        if (name !== undefined) {
+            fieldsToUpdate.push(`name = $${paramIndex++}`);
+            queryParams.push(name.trim()); // Use trimmed name
+        }
+        if (deadlineISO !== null) { // Use the processed ISO string
+            fieldsToUpdate.push(`deadline = $${paramIndex++}`);
+            queryParams.push(deadlineISO);
         }
 
-        await client.query('COMMIT');
-        console.log(`Successfully generated random results for ${updatedCount} fixtures in round ${parsedRoundId}.`);
+        // Check if there's anything to update
+        if (fieldsToUpdate.length === 0) {
+            // Nothing to update, fetch and return current data to signal success without change
+            console.log(`No changes detected for round ${parsedRoundId}. Returning current data.`);
+            const currentDataResult = await db.query('SELECT * FROM rounds WHERE round_id = $1', [parsedRoundId]);
+             // Check again if round exists in case of race condition (unlikely here)
+             if (currentDataResult.rows.length === 0) {
+                 return res.status(404).json({ message: `Round with ID ${parsedRoundId} not found.` });
+             }
+            return res.status(200).json(currentDataResult.rows[0]); // Return snake_case from DB
+        }
 
-        // 4. Respond Success
-        res.status(200).json({ message: `Generated random results for ${updatedCount} fixtures.`, count: updatedCount });
+        // Add updated_at timestamp - always update if other fields change
+        fieldsToUpdate.push(`updated_at = CURRENT_TIMESTAMP`);
+
+        // Add round_id for the WHERE clause, it will be the last parameter
+        queryParams.push(parsedRoundId);
+
+        const updateQuery = `
+            UPDATE rounds
+            SET ${fieldsToUpdate.join(', ')}
+            WHERE round_id = $${paramIndex}
+            RETURNING *; -- Return the full updated row
+        `;
+
+        // 5. Execute the Update Query
+        console.log(`Executing update for round ${parsedRoundId}: ${updateQuery} with params: ${JSON.stringify(queryParams)}`);
+        const result = await db.query(updateQuery, queryParams);
+
+        // 6. Respond with Updated Data
+        // The data from `RETURNING *` is already in DB's snake_case format
+        console.log(`Successfully updated round ${parsedRoundId}.`);
+        res.status(200).json(result.rows[0]);
 
     } catch (error) {
-        await client.query('ROLLBACK');
-        console.error(`Error generating random results for round ${parsedRoundId}:`, error);
-        next(error);
-    } finally {
-        client.release();
+        // Check for specific errors like unique constraint on name if applicable
+        if (error.code === '23505' && error.constraint === 'rounds_name_key') { // Adjust constraint name if needed
+             console.error(`Update failed for round ${parsedRoundId}: Name conflict.`);
+             return res.status(409).json({ message: 'A round with this name already exists.' });
+        }
+        console.error(`Error updating round ${parsedRoundId}:`, error);
+        next(error); // Pass error to the global error handler
     }
 });
-// --- END GENERATE RANDOM RESULTS ROUTE ---
+// ========== NEW PUT ROUTE HANDLER ENDS HERE ==========
 
 
 // GET /api/rounds/:roundId - Get details for a specific round, including fixtures (public info, but protected)
-// ** MOVED LATER - MUST BE LAST **
+// ** MUST BE THE LAST PARAMETERIZED ROUTE FOR /:roundId **
 router.get('/:roundId', protect, async (req, res, next) => {
     const { roundId } = req.params;
     // Allow 'active' to pass through to the /active handler if it wasn't caught earlier by server routing order
-    // Also check for 'import' here explicitly, although the POST should differentiate, belt-and-braces
-    if (roundId === 'active' || roundId === 'import') {
+    // Check for other keywords that might clash if needed
+    if (['active', 'import'].includes(roundId)) { // Added 'import' defensively
          console.log(`GET /:roundId - Skipping keyword: ${roundId}`);
-         return next();
+         return next(); // Pass to next route handler (should not be needed if routes ordered correctly)
     }
 
     const parsedRoundId = parseInt(roundId, 10);
@@ -764,7 +874,7 @@ router.get('/:roundId', protect, async (req, res, next) => {
             status: round_snake.status,
             fixtures: fixtures_camel // Use mapped fixtures
         };
-        res.status(200).json(responsePayload);
+        res.status(200).json(responsePayload); // Returns mapped camelCase
     } catch (err) {
         console.error(`Error fetching details for round ${parsedRoundId}:`, err);
         next(err);

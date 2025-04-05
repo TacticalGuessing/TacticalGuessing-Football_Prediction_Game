@@ -100,6 +100,8 @@ export interface StandingEntry {
     userId: number;
     name: string;   // Changed from username
     points: number; // Changed from totalScore
+    // movement: number | null; // Add later when implementing movement
+    // Add other stats fields later (totalPredictions, totalCorrect, etc.)
 }
 
 // --- Admin Specific Interfaces ---
@@ -107,13 +109,20 @@ export interface StandingEntry {
 // Payload for creating a round
 export interface CreateRoundPayload {
     name: string;
-    deadline: string; // Expecting ISO format string
+    deadline: string; // Expecting ISO format string (or datetime-local string if backend handles it)
 }
 
 // Payload for updating round status
 export interface UpdateRoundStatusPayload {
     status: 'SETUP' | 'OPEN' | 'CLOSED'; // Only allow setting these explicitly
 }
+
+// --- NEW: Payload for updating round details (name, deadline) ---
+export interface UpdateRoundPayload {
+    name?: string;     // Optional: Only send if changed
+    deadline?: string; // Optional: Only send if changed. Expecting ISO or datetime-local string
+}
+
 
 // Payload for adding a single fixture manually
 export interface AddFixturePayload {
@@ -245,7 +254,9 @@ export const loginUser = async (credentials: LoginCredentials): Promise<AuthResp
     }, null);
     // Backend auth returns camelCase directly as per previous setup
     const data = await response.json();
-    return data as Promise<AuthResponse>;
+    // Ensure the returned object matches AuthResponse, casting might hide issues
+    // Consider adding runtime validation if necessary
+    return data as AuthResponse;
 };
 
 /**
@@ -270,7 +281,7 @@ export const getActiveRound = async (token: string): Promise<ActiveRoundResponse
              return null;
          }
          console.error("Error in getActiveRound:", error);
-         throw error;
+         throw error; // Re-throw to allow calling components to handle it
      }
 };
 
@@ -281,7 +292,6 @@ export const getActiveRound = async (token: string): Promise<ActiveRoundResponse
  * Sends camelCase payload to the backend.
  */
 export const savePredictions = async (predictions: PredictionPayload[], token: string): Promise<void> => {
-    // --- FIX APPLIED ---
     // Backend expects { predictions: [...] } where each prediction uses camelCase keys
     const payload = {
         predictions: predictions.map(p => ({
@@ -320,7 +330,7 @@ export const getStandings = async (token: string, roundId?: number | null): Prom
     // Backend standings endpoint now provides camelCase response directly.
      if (!Array.isArray(rawData)) {
          console.error(`API Error: GET ${url} did not return an array. Response:`, rawData);
-         return [];
+         return []; // Return empty array on unexpected response format
      }
     // Type assertion is safe if backend contract is maintained
     return rawData as StandingEntry[];
@@ -348,13 +358,13 @@ export const getRounds = async (token: string, status?: Round['status']): Promis
 
 /**
  * Creates a new round (Admin).
- * Sends camelCase payload, backend POST /rounds handles it.
+ * Sends camelCase payload, backend POST /rounds handles it (assumed).
  * Backend returns snake_case, so map response here.
  */
 export const createRound = async (roundData: CreateRoundPayload, token: string): Promise<Round> => {
     const response = await fetchWithAuth('/rounds', {
         method: 'POST',
-        body: JSON.stringify(roundData),
+        body: JSON.stringify(roundData), // Sending payload as is (name, deadline)
     }, token);
     const createdRaw = await response.json();
     // Map snake_case response to camelCase
@@ -363,14 +373,43 @@ export const createRound = async (roundData: CreateRoundPayload, token: string):
 
 /**
  * Updates the status of a specific round (Admin).
- * Sends camelCase payload { status: '...' }.
+ * Sends camelCase payload { status: '...' }. Backend returns nothing (204).
  */
 export const updateRoundStatus = async (roundId: number, payload: UpdateRoundStatusPayload, token: string): Promise<void> => {
     await fetchWithAuth(`/rounds/${roundId}/status`, {
         method: 'PUT',
         body: JSON.stringify(payload),
     }, token);
+     // No return value expected on success
 };
+
+// --- NEW: Function to update round details (name, deadline) ---
+/**
+ * Updates the details (name, deadline) of a specific round (Admin).
+ * Sends camelCase payload. Backend returns updated round in snake_case.
+ */
+export const updateRoundDetails = async (roundId: number, payload: UpdateRoundPayload, token: string): Promise<Round> => {
+    const endpoint = `/rounds/${roundId}`; // Target the specific round ID with PUT
+    const response = await fetchWithAuth(endpoint, {
+        method: 'PUT',
+        body: JSON.stringify(payload), // Send { name?: "...", deadline?: "..." }
+    }, token);
+
+    // Check if the response includes content before trying to parse JSON
+    if (response.status === 204 || !response.headers.get('content-type')?.includes('application/json')) {
+        // Handle cases where backend might not return the updated object (though it should for PUT)
+         console.warn(`Update round details for ID ${roundId} returned status ${response.status} or non-JSON content.`);
+         // Optionally fetch the round again to get updated data, or throw an error
+         // For now, let's assume success but log a warning. Ideally, backend returns the updated resource.
+         // If fetching again: return getRounds(token).then(rounds => rounds.find(r => r.roundId === roundId));
+         throw new Error(`Round updated, but no confirmation data received (Status: ${response.status}). Please refresh manually.`); // Or handle differently
+    }
+
+    const updatedRaw = await response.json();
+    // Map snake_case response from backend to camelCase
+    return toCamelCase<Round>(updatedRaw);
+};
+
 
 /**
  * Fetches all fixtures for a specific round (Admin).
@@ -404,7 +443,10 @@ export const addFixture = async (roundId: number, fixtureData: AddFixturePayload
          throw new Error(`Failed to add fixture, received status ${response.status}`);
     }
      if (!response.headers.get('content-type')?.includes('application/json')) {
-         throw new Error('Received non-JSON response after adding fixture');
+         // Handle case where backend might return 201 Created with no body or non-JSON body
+         console.warn(`Add fixture responded with status ${response.status} but non-JSON content.`);
+         // Depending on need, might fetch the fixture list again or throw an error demanding a body
+         throw new Error('Fixture added, but no confirmation data received.');
      }
 
     const createdRaw = await response.json();
@@ -419,11 +461,12 @@ export const deleteFixture = async (fixtureId: number, token: string): Promise<v
     const endpoint = `/fixtures/${fixtureId}`;
     try {
         const response = await fetchWithAuth(endpoint, { method: 'DELETE' }, token);
-        if (response.status !== 204) {
+        if (response.status !== 204) { // Expect 204 No Content on successful DELETE
             console.warn(`Delete fixture responded with unexpected status: ${response.status}`);
-            try { const body = await response.text(); throw new Error(`Delete fixture responded with status ${response.status}: ${body}`); }
-            catch { throw new Error(`Delete fixture responded with status ${response.status}`); }
+            let body = ''; try { body = await response.text(); } catch {}
+            throw new Error(`Delete fixture responded with status ${response.status}: ${body}`);
         }
+         // No return needed on success
     } catch (error: unknown) {
         console.error(`Error deleting fixture ${fixtureId}:`, error);
         if (error instanceof Error) { throw error; }
@@ -440,11 +483,17 @@ export const enterFixtureResult = async (fixtureId: number, payload: ResultPaylo
     const endpoint = `/fixtures/${fixtureId}/result`;
     try {
         const response = await fetchWithAuth(endpoint, { method: 'PUT', body: JSON.stringify(payload) }, token);
-        if (response.status === 204) { throw new Error("Fixture result updated successfully, but no updated data was returned (Status 204)."); }
+        // PUT often returns 200 OK with the updated resource, or 204 No Content
+        if (response.status === 204) {
+             console.warn("Fixture result updated successfully, but no updated data was returned (Status 204).");
+             // Might need to fetch the fixture again if UI needs updated data immediately
+             throw new Error("Fixture result updated, but no confirmation data received (Status 204). Refresh may be needed.");
+         }
         if (response.headers.get('content-type')?.includes('application/json')) {
              const updatedRaw = await response.json();
              return toCamelCase<Fixture>(updatedRaw); // Map snake_case response
         }
+        // Handle unexpected response (e.g., 200 OK but no JSON)
         throw new Error(`Fixture result update responded with status ${response.status} but unexpected content type.`);
     } catch (error: unknown) {
         console.error(`Error submitting result for fixture ${fixtureId}:`, error);
@@ -455,10 +504,12 @@ export const enterFixtureResult = async (fixtureId: number, payload: ResultPaylo
 
 /**
  * Triggers the scoring process for a specific CLOSED round (Admin).
+ * Backend returns nothing (200 OK or 202 Accepted typically).
  */
 export const triggerScoring = async (roundId: number, token: string): Promise<void> => {
     const endpoint = `/rounds/${roundId}/score`;
     try {
+        // Assume backend returns 200 or 202 on success, no body needed
         await fetchWithAuth(endpoint, { method: 'POST' }, token);
         console.log(`Scoring triggered successfully for round ${roundId}`);
     } catch (error: unknown) {
@@ -477,6 +528,7 @@ export const importFixtures = async (payload: ImportFixturesPayload, token: stri
     const endpoint = '/rounds/import/fixtures';
     try {
         const response = await fetchWithAuth(endpoint, { method: 'POST', body: JSON.stringify(payload) }, token);
+        // Expect 200 or 201 with JSON body
         if ((response.status === 201 || response.status === 200) && response.headers.get('content-type')?.includes('application/json')) {
             // Backend returns camelCase { message, count }
             return response.json();
@@ -499,6 +551,7 @@ export const generateRandomResults = async (roundId: number, token: string): Pro
     const endpoint = `/rounds/${roundId}/fixtures/random-results`;
     try {
         const response = await fetchWithAuth(endpoint, { method: 'POST' }, token);
+        // Expect 200 OK with JSON body
         if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
              // Backend returns camelCase { message, count }
              return response.json();
@@ -521,11 +574,12 @@ export const deleteRound = async (roundId: number, token: string): Promise<void>
     const endpoint = `/rounds/${roundId}`;
     try {
         const response = await fetchWithAuth(endpoint, { method: 'DELETE' }, token);
-        if (response.status !== 204) {
+        if (response.status !== 204) { // Expect 204 No Content
             console.warn(`Delete round responded with unexpected status: ${response.status}`);
-             try { const body = await response.text(); throw new Error(`Delete round responded with status ${response.status}: ${body}`); }
-             catch { throw new Error(`Delete round responded with status ${response.status}`); }
+             let body = ''; try { body = await response.text(); } catch {}
+             throw new Error(`Delete round responded with status ${response.status}: ${body}`);
         }
+         // No return needed
     } catch (error: unknown) {
         console.error(`Error deleting round ${roundId}:`, error);
         if (error instanceof Error) { throw error; }
@@ -534,15 +588,8 @@ export const deleteRound = async (roundId: number, token: string): Promise<void>
 };
 
 // --- NOTE on Case Mapping ---
-// The approach here is inconsistent. Some functions assume the backend handles mapping,
-// some map responses, some map payloads.
-// For maintainability, it's BEST to:
-// 1. Define the API Contract: Decide if the API *always* accepts/returns camelCase OR snake_case.
-// 2. Backend Consistency: Ensure ALL backend endpoints adhere to the contract.
-// 3. Frontend Consistency:
-//    - If API uses snake_case: Use mapping helpers (toCamelCase, mapArrayToCamelCase) in *every* api.ts function for responses. Map payloads *to* snake_case before sending.
-//    - If API uses camelCase: No mapping needed in api.ts. Ensure backend sends/receives camelCase correctly.
-// The current code mixes approaches. For now, we've fixed the immediate `savePredictions` bug by sending camelCase, assuming the backend prediction endpoint expects it.
-// The helper functions `toCamelCase` and `mapArrayToCamelCase` have been updated to handle nested objects/arrays recursively.
-// The `StandingEntry` interface has been updated to match the backend query (rank, userId, username, totalScore).
-// The `getStandings` function replaces `getStandingsForRound` to handle both overall and specific rounds.
+// Consistent approach: Frontend uses camelCase internally. API functions map
+// snake_case responses from backend to camelCase using helpers. Payloads
+// are sent as camelCase, assuming backend endpoints handle/expect this or map it internally.
+// Specific endpoints confirmed to return camelCase (like /login, /rounds/active, /standings)
+// skip explicit mapping but rely on backend contract.
