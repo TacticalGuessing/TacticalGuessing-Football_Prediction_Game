@@ -94,15 +94,23 @@ export interface SimpleRound {
     name: string;
 }
 
-// Use a more descriptive name, ensure fields match backend response
+// ========================================================
+// ===== STANDING ENTRY INTERFACE - UPDATED ===============
+// ========================================================
 export interface StandingEntry {
-    rank: number;
-    userId: number;
-    name: string;   // Changed from username
-    points: number; // Changed from totalScore
-    // movement: number | null; // Add later when implementing movement
-    // Add other stats fields later (totalPredictions, totalCorrect, etc.)
+  rank: number;
+  userId: number; // Keep userId for potential key prop or future use
+  name: string;
+  points: number;
+  movement: number | null; // Positive (up), negative (down), or null (no change/first round)
+  totalPredictions: number; // 'Pld' column
+  correctOutcomes: number; // 'Outcome' column
+  exactScores: number; // 'Exact' column
+  accuracy: number | null; // Percentage (e.g., 75.5) or null if no predictions
 }
+// ========================================================
+// ========================================================
+
 
 // --- Admin Specific Interfaces ---
 
@@ -333,6 +341,7 @@ export const getStandings = async (token: string, roundId?: number | null): Prom
          return []; // Return empty array on unexpected response format
      }
     // Type assertion is safe if backend contract is maintained
+    // Note: The type returned now includes the new fields defined in StandingEntry
     return rawData as StandingEntry[];
 };
 
