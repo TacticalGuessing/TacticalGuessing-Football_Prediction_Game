@@ -50,6 +50,15 @@ export interface Fixture {
     status: 'SCHEDULED' | 'IN_PLAY' | 'PAUSED' | 'FINISHED' | 'POSTPONED' | 'SUSPENDED' | 'CANCELED'; // Add status from backend
 }
 
+// === ADD THIS INTERFACE ===
+export interface PotentialFixture {
+    externalId: number; // The ID from football-data.org
+    homeTeam: string;
+    awayTeam: string;
+    matchTime: string; // ISO String (UTC from football-data.org)
+}
+// ==========================
+
 
 // Predictions
 export interface Prediction {
@@ -643,6 +652,102 @@ export const deleteRound = async (roundId: number, token: string): Promise<void>
         else { throw new Error('An unknown error occurred while deleting the round.'); }
     }
 };
+
+// === ADD THIS FUNCTION AT THE END OF ADMIN FUNCTIONS ===
+/**
+ * Fetches potential fixtures from the external API based on competition and date range.
+ */
+export const fetchExternalFixtures = async (
+    token: string,
+    competitionCode: string,
+    dateFrom: string, // Expect YYYY-MM-DD
+    dateTo: string    // Expect YYYY-MM-DD
+): Promise<PotentialFixture[]> => {
+    const url = '/fixtures/fetch-external'; // Matches backend route
+    console.log(`%c[api.ts] Calling fetchExternalFixtures: ${url}`, 'color: cyan;', { competitionCode, dateFrom, dateTo });
+
+    if (!token) throw new Error("Authentication token is missing.");
+    if (!competitionCode || !dateFrom || !dateTo) throw new Error("Competition code and date range are required.");
+
+    try {
+        const response = await fetchWithAuth(url, {
+            method: 'POST',
+            body: JSON.stringify({ competitionCode, dateFrom, dateTo }) // Send payload in body
+        }, token);
+        console.log(`%c[fetchExternalFixtures] fetchWithAuth successful`, 'color: cyan;');
+
+        const data = await response.json(); // Expect backend to return array directly
+
+        if (!Array.isArray(data)) {
+            console.error('%c[fetchExternalFixtures] Invalid response format (expected array):', 'color: red;', data);
+            throw new Error("Received invalid data format from server.");
+        }
+
+        console.log(`%c[fetchExternalFixtures] Success response (count: ${data.length}):`, 'color: cyan;', data);
+        // Basic check on first item structure before casting
+        if (data.length > 0 && (typeof data[0].externalId !== 'number' || typeof data[0].homeTeam !== 'string')) {
+             console.error('%c[fetchExternalFixtures] Response array items have incorrect structure.', 'color: red;', data[0]);
+             throw new Error("Received invalid fixture data structure from server.");
+        }
+
+        return data as PotentialFixture[]; // Cast to expected type
+
+    } catch (error) {
+         console.error(`%c[fetchExternalFixtures] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+         // Re-throw the error so the calling component can handle it
+         if (error instanceof Error) {
+            throw error;
+         } else {
+            throw new Error('An unknown error occurred while fetching external fixtures.');
+         }
+    }
+};
+
+// === ADD THIS NEW FUNCTION ===
+/**
+ * Imports selected fixtures (previously fetched) into a specific round.
+ */
+export const importSelectedFixtures = async (
+    token: string,
+    roundId: number,
+    // Pass only the necessary data for backend insertion
+    fixturesToImport: { homeTeam: string; awayTeam: string; matchTime: string }[]
+): Promise<{ message: string; count: number }> => { // Expect same response shape as matchday import
+    const url = `/rounds/${roundId}/import-selected`; // Matches new backend route
+    console.log(`%c[api.ts] Calling importSelectedFixtures for round ${roundId}`, 'color: olive;', { count: fixturesToImport.length });
+
+    if (!token) throw new Error("Authentication token is missing.");
+    if (!roundId || isNaN(roundId)) throw new Error("Valid Round ID is required.");
+    if (!Array.isArray(fixturesToImport) || fixturesToImport.length === 0) {
+        throw new Error("At least one fixture must be provided to import.");
+    }
+
+    try {
+        const response = await fetchWithAuth(url, {
+            method: 'POST',
+            // Send in the expected { fixturesToImport: [...] } format
+            body: JSON.stringify({ fixturesToImport: fixturesToImport })
+        }, token);
+        console.log(`%c[importSelectedFixtures] fetchWithAuth successful`, 'color: olive;');
+
+        const responseData = await response.json(); // Expect { message, count }
+
+        // Validate response structure
+        if (!responseData || typeof responseData.message !== 'string' || typeof responseData.count !== 'number') {
+             console.error('%c[importSelectedFixtures] Invalid response format:', 'color: red;', responseData);
+             throw new Error("Received invalid data format from server after import.");
+         }
+
+        console.log(`%c[importSelectedFixtures] Success response:`, 'color: olive;', responseData);
+        return responseData;
+
+    } catch (error) {
+        console.error(`%c[importSelectedFixtures] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+        throw error; // Re-throw
+    }
+};
+// ============================
+// ==========================================================
 
 // --- NOTE on Case Mapping ---
 // Consistent approach: Frontend uses camelCase internally. API functions map

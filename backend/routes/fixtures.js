@@ -1,7 +1,13 @@
 // backend/routes/fixtures.js
 const express = require('express');
-const db = require('../db'); // Assuming db.js exports query function or pool
-const { protect, admin } = require('../middleware/authMiddleware'); // Import middleware
+const axios = require('axios'); // <<< Added axios import
+const db = require('../db');
+// <<< Ensure both 'protect' and 'admin' (or 'isAdmin') are imported >>>
+// Assuming your authMiddleware exports an 'admin' function for checking role
+const { protect, admin } = require('../middleware/authMiddleware');
+// <<< If your admin middleware is separate, import it instead: >>>
+// const { isAdmin } = require('../middleware/adminMiddleware');
+// <<< *** USE 'admin' OR 'isAdmin' below CONSISTENTLY based on your import *** >>>
 
 const router = express.Router();
 
@@ -10,143 +16,165 @@ const router = express.Router();
  * @desc    Enter or update the result for a specific fixture
  * @access  Private/Admin
  */
+// <<< Using 'admin' from authMiddleware based on your original code >>>
 router.put('/:fixtureId/result', protect, admin, async (req, res, next) => {
     const { fixtureId } = req.params;
-    // --- >>> FIX: Expect camelCase from req.body <<< ---
-    const { homeScore, awayScore } = req.body;
+    const { homeScore, awayScore } = req.body; // Expect camelCase
 
     // --- Validation ---
     const parsedFixtureId = parseInt(fixtureId, 10);
-    if (isNaN(parsedFixtureId)) {
-        return res.status(400).json({ message: 'Fixture ID must be an integer.' });
-    }
-
-    // --- >>> FIX: Use camelCase variables for parsing <<< ---
+    if (isNaN(parsedFixtureId)) { /* ... */ }
     const homeScoreInt = parseInt(homeScore, 10);
     const awayScoreInt = parseInt(awayScore, 10);
-
-    // Validate scores using camelCase variables
-    if (
-        homeScore === undefined || // Check if camelCase key existed
-        isNaN(homeScoreInt) ||
-        homeScoreInt < 0 ||
-        awayScore === undefined || // Check if camelCase key existed
-        isNaN(awayScoreInt) ||
-        awayScoreInt < 0
-       ) {
-        // Updated error message slightly for clarity
-        return res.status(400).json({ message: 'Home score and away score must be provided as valid non-negative integers.' });
+    if ( homeScore === undefined || isNaN(homeScoreInt) || homeScoreInt < 0 ||
+         awayScore === undefined || isNaN(awayScoreInt) || awayScoreInt < 0 ) {
+       return res.status(400).json({ message: 'Home score and away score must be provided as valid non-negative integers.' });
     }
     // --- End Validation ---
 
-
     try {
-        // Optional: Add a check here to see if the round associated with this fixture is 'CLOSED' or 'COMPLETED'
-        /*
-        const fixtureCheck = await db.query(
-            `SELECT r.status
-             FROM fixtures f
-             JOIN rounds r ON f.round_id = r.round_id
-             WHERE f.fixture_id = $1`,
-            [parsedFixtureId]
-        );
-
-        if (fixtureCheck.rows.length === 0) {
-            return res.status(404).json({ message: 'Fixture not found.' });
-        }
-
-        const roundStatus = fixtureCheck.rows[0].status;
-        if (roundStatus !== 'CLOSED' && roundStatus !== 'COMPLETED') {
-             return res.status(400).json({ message: `Cannot enter results for a fixture in a round with status '${roundStatus}'. Round must be CLOSED or COMPLETED.` });
-        }
-        */
-
-        // Update the fixture using DB column names (snake_case)
-        // Also update status to 'FINISHED'
         const updateQuery = `
-            UPDATE fixtures
-            SET home_score = $1, away_score = $2, status = 'FINISHED'
-            WHERE fixture_id = $3
-            RETURNING *; -- Return the updated fixture row (uses DB column names)
+            UPDATE fixtures SET home_score = $1, away_score = $2, status = 'FINISHED'
+            WHERE fixture_id = $3 RETURNING *;
         `;
-        // Use the validated integer values
         const values = [homeScoreInt, awayScoreInt, parsedFixtureId];
-
-        const result = await db.query(updateQuery, values);
+        const result = await db.query(updateQuery, values); // <<< Assuming db.query handles connection pooling
 
         if (result.rows.length === 0) {
-            // Fixture with the given ID wasn't found
             return res.status(404).json({ message: 'Fixture not found.' });
         }
-
-        // Respond with the updated fixture data (using DB snake_case column names)
-        // Frontend api.ts function enterFixtureResult can map this if needed
-        res.status(200).json(result.rows[0]);
+        res.status(200).json(result.rows[0]); // Respond with DB snake_case
 
     } catch (error) {
         console.error(`Error updating result for fixture ${parsedFixtureId}:`, error);
-        next(error); // Pass to global error handler
+        next(error);
     }
-}); // <<< Closing bracket for the PUT route handler
+});
 
 
-// --- NEW DELETE FIXTURE ROUTE ---
-// *** ENSURE THIS IS SEPARATE FROM THE PUT ROUTE ABOVE ***
+/**
+ * @route   DELETE /api/fixtures/:fixtureId
+ * @desc    Delete a fixture and its associated predictions
+ * @access  Private/Admin
+ */
+// <<< Using 'admin' from authMiddleware based on your original code >>>
 router.delete('/:fixtureId', protect, admin, async (req, res, next) => {
     const { fixtureId } = req.params;
     const parsedFixtureId = parseInt(fixtureId, 10);
+    console.log(`Attempting to delete fixture ID: ${parsedFixtureId}`);
 
-    console.log(`Attempting to delete fixture ID: ${parsedFixtureId}`); // Log entry
+    if (isNaN(parsedFixtureId)) { /* ... */ }
 
-    if (isNaN(parsedFixtureId)) {
-        console.log('Delete failed: Invalid fixture ID format.');
-        return res.status(400).json({ message: 'Fixture ID must be an integer.' });
-    }
-
-    const client = await db.pool.connect(); // Use pool for transaction
+    // Use client from pool for transaction
+    // <<< Adapt based on how your db object provides clients >>>
+    const getClient = db.getClient || (() => db.pool.connect());
+    const client = await getClient();
 
     try {
         await client.query('BEGIN');
-
-        // 1. Delete associated predictions (handle potential orphans)
-        const predictionDeleteResult = await client.query(
-            'DELETE FROM predictions WHERE fixture_id = $1',
-            [parsedFixtureId]
-        );
-        console.log(`Deleted ${predictionDeleteResult.rowCount} associated prediction(s) for fixture ${parsedFixtureId}.`);
-
-        // 2. Delete the fixture itself
-        const fixtureDeleteResult = await client.query(
-            'DELETE FROM fixtures WHERE fixture_id = $1',
-            [parsedFixtureId]
-        );
-
-        // 3. Check if the fixture was actually found and deleted
+        const predictionDeleteResult = await client.query('DELETE FROM predictions WHERE fixture_id = $1', [parsedFixtureId]);
+        console.log(`Deleted ${predictionDeleteResult.rowCount} prediction(s) for fixture ${parsedFixtureId}.`);
+        const fixtureDeleteResult = await client.query('DELETE FROM fixtures WHERE fixture_id = $1', [parsedFixtureId]);
         if (fixtureDeleteResult.rowCount === 0) {
-            await client.query('ROLLBACK'); // Rollback transaction
+            await client.query('ROLLBACK');
             console.log(`Delete failed: Fixture ID ${parsedFixtureId} not found.`);
             return res.status(404).json({ message: 'Fixture not found.' });
         }
-
-        // 4. Commit the transaction
         await client.query('COMMIT');
         console.log(`Successfully deleted fixture ID ${parsedFixtureId} and associated predictions.`);
-
-        // Send success response - 204 No Content is standard for successful DELETE
         res.status(204).send();
 
     } catch (error) {
-        // Rollback transaction on any error
-        await client.query('ROLLBACK');
+        if (client && !client._ending) { // Check _ending property if using pg Pool client
+            try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Error during ROLLBACK:', rollbackError); }
+        }
         console.error(`Error deleting fixture ${parsedFixtureId}:`, error);
-        next(error); // Pass error to global handler
+        next(error);
     } finally {
-        client.release(); // Release client back to pool
+        if (client) { client.release(); }
     }
 });
-// --- END DELETE FIXTURE ROUTE ---
 
 
-// Other potential fixture-related routes can be added here later
+// =======================================================================
+// ===== NEW ROUTE: Fetch Potential Fixtures by Date Range =============
+// =======================================================================
+/**
+ * @route   POST /api/fixtures/fetch-external
+ * @desc    Fetch potential fixtures from football-data.org based on filters
+ * @access  Private (Admin only)
+ */
+// <<< Using 'admin' from authMiddleware based on your original code >>>
+router.post('/fetch-external', protect, admin, async (req, res, next) => {
+    const { competitionCode, dateFrom, dateTo } = req.body;
+
+    // --- Input Validation ---
+    if (!competitionCode || !dateFrom || !dateTo) {
+        return res.status(400).json({ message: 'Competition code, start date, and end date are required.' });
+    }
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(dateFrom) || !dateRegex.test(dateTo)) {
+         return res.status(400).json({ message: 'Dates must be in YYYY-MM-DD format.' });
+    }
+    // --- End Validation ---
+
+    const externalApiUrl = 'https://api.football-data.org/v4/matches';
+    const apiToken = process.env.FOOTBALL_DATA_API_KEY;
+
+    if (!apiToken) {
+        console.error("Security Error: FOOTBALL_DATA_API_KEY is not set in environment variables.");
+        return res.status(500).json({ message: 'Server configuration error: Missing external API token.' });
+    }
+
+    console.log(`[API /fixtures/fetch-external] Fetching matches for ${competitionCode} from ${dateFrom} to ${dateTo}`);
+
+    try {
+        const response = await axios.get(externalApiUrl, {
+            headers: { 'X-Auth-Token': apiToken },
+            params: {
+                competitions: competitionCode,
+                dateFrom: dateFrom,
+                dateTo: dateTo,
+                // status: 'SCHEDULED,TIMED' // Optional: Consider if you want only upcoming
+            }
+        });
+
+        if (!response.data || !Array.isArray(response.data.matches)) {
+             console.error(`[API /fixtures/fetch-external] Unexpected response structure from football-data.org for ${competitionCode}:`, response.data);
+             throw new Error('Received invalid data structure from external API.');
+        }
+
+        // Map response to desired frontend format (camelCase)
+        const potentialFixtures = response.data.matches.map(match => {
+             if (!match || !match.homeTeam || !match.awayTeam || !match.utcDate || !match.id) {
+                 console.warn(`[API /fixtures/fetch-external] Skipping match due to missing data: ${JSON.stringify(match)}`);
+                 return null;
+             }
+             return {
+                 externalId: match.id,
+                 homeTeam: match.homeTeam.name || 'N/A',
+                 awayTeam: match.awayTeam.name || 'N/A',
+                 matchTime: match.utcDate, // ISO string
+             };
+        }).filter(fixture => fixture !== null);
+
+        console.log(`[API /fixtures/fetch-external] Found ${potentialFixtures.length} potential fixtures for ${competitionCode}.`);
+        res.status(200).json(potentialFixtures);
+
+    } catch (error) {
+        console.error(`[API /fixtures/fetch-external] Error fetching from football-data.org for ${competitionCode}:`, error.response?.data || error.message);
+        let status = 500;
+        let message = 'Failed to fetch fixtures from external source.';
+        if (error.response) {
+             status = error.response.status === 403 ? 403 : error.response.status === 404 ? 404 : 500;
+             message = error.response.data?.message || message;
+             if (status === 403) message = 'Access denied by external API (check API token or plan limits).'
+             if (status === 404) message = 'Competition code not found or no matches in date range from external source.'
+        }
+        res.status(status).json({ message });
+    }
+});
+// =======================================================================
+
 
 module.exports = router;

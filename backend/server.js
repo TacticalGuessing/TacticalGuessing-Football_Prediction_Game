@@ -10,6 +10,7 @@ const roundRoutes = require('./routes/rounds');
 const predictionRoutes = require('./routes/predictions');
 const fixturesRoutes = require('./routes/fixtures'); // <--- Add this line: Import fixtures router
 const standingsRoutes = require('./routes/standings');
+const fixtureRoutes = require('./routes/fixtures'); // Adjust path if needed
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -25,6 +26,7 @@ app.use('/api/rounds', roundRoutes);
 app.use('/api/predictions', predictionRoutes);
 app.use('/api/fixtures', fixturesRoutes); // <--- Add this line: Mount fixtures router
 app.use('/api/standings', standingsRoutes);
+app.use('/api/fixtures', fixtureRoutes);
 
 // Basic Database Connection Test Route (Optional - can remove if DB connects on start)
 app.get('/api/db-test', async (req, res, next) => {

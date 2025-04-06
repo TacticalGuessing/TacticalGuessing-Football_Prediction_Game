@@ -13,7 +13,10 @@ import {
     importFixtures,
     deleteFixture,
     generateRandomResults,
+    fetchExternalFixtures,
+    importSelectedFixtures,
     Fixture,
+    PotentialFixture,
     AddFixturePayload,
     ResultPayload,
     ImportFixturesPayload
@@ -116,6 +119,14 @@ const COMPETITIONS: Competition[] = [
     { code: 'ELC', name: 'Championship (England)'},
 ];
 
+// --- ADD THIS HELPER ---
+const formatDateToYYYYMMDD = (date: Date): string => {
+    const year = date.getFullYear();
+    const month = (date.getMonth() + 1).toString().padStart(2, '0'); // Months are 0-indexed
+    const day = date.getDate().toString().padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+// --- END NEW HELPER ---
 
 export default function AdminRoundFixturesPage() {
     const { token, user, isLoading: isAuthLoading } = useAuth();
@@ -149,6 +160,21 @@ export default function AdminRoundFixturesPage() {
     // const [generateResultsError, setGenerateResultsError] = useState<string | null>(null);
     const [isConfirmGenerateOpen, setIsConfirmGenerateOpen] = useState(false);
     const [isGeneratingResults, setIsGeneratingResults] = useState(false);
+
+    // --- ADD NEW STATE for Date Range Import ---
+    const [importDateCompCode, setImportDateCompCode] = useState(''); // Separate state for this section's dropdown
+    const [startDate, setStartDate] = useState<string>(() => formatDateToYYYYMMDD(new Date())); // Default to today
+    const [endDate, setEndDate] = useState<string>(() => {
+        const nextWeek = new Date();
+        nextWeek.setDate(nextWeek.getDate() + 7);
+        return formatDateToYYYYMMDD(nextWeek);
+    }); // Default to 7 days from today
+    const [isFetchingExternal, setIsFetchingExternal] = useState(false); // Loading for fetch button
+    const [potentialFixtures, setPotentialFixtures] = useState<PotentialFixture[]>([]); // Results from fetch
+    const [fetchError, setFetchError] = useState<string | null>(null); // Error specific to fetch
+    const [selectedExternalIds, setSelectedExternalIds] = useState<Set<number>>(new Set()); // Tracks selected fixture external IDs
+    const [isImportingSelected, setIsImportingSelected] = useState(false); // Loading for final import button
+    // --- END NEW STATE ---
 
     // --- Fetch Fixtures Function ---
     const fetchRoundAndFixtures = useCallback(async (id: number) => {
@@ -318,6 +344,115 @@ export default function AdminRoundFixturesPage() {
         try { return new Intl.DateTimeFormat('en-GB', { dateStyle: 'short', timeStyle: 'short', hour12: false }).format(new Date(isoString)); } catch (e) { console.error("Error formatting date:", isoString, e); return "Invalid Date"; }
     };
 
+    // === ADD NEW Handler for Fetching External Fixtures by Date ===
+    const handleFetchExternal = async () => {
+        if (user?.role !== 'ADMIN' || !token) {
+            toast.error("Admin authentication required.");
+            return;
+        }
+        if (!importDateCompCode || !startDate || !endDate) {
+            toast.error("Please select a competition and both start/end dates.");
+            return;
+        }
+        if (new Date(endDate) < new Date(startDate)) {
+             toast.error("End date cannot be before start date.");
+             return;
+        }
+        // Prevent concurrent actions (check against ALL relevant loading states)
+        if (isAddingFixture || isImporting || isDeletingFixture || isGeneratingResults || isFetchingExternal || isImportingSelected) return;
+
+        setIsFetchingExternal(true);
+        setFetchError(null);
+        setPotentialFixtures([]); // Clear previous results
+        setSelectedExternalIds(new Set()); // Clear selection
+
+        try {
+            const fetchedData = await fetchExternalFixtures(token, importDateCompCode, startDate, endDate);
+            setPotentialFixtures(fetchedData);
+            if (fetchedData.length === 0) {
+                toast.success("No fixtures found matching the criteria in the external source.");
+            }
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Failed to fetch external fixtures.';
+            setFetchError(message); // Display error near the fetch UI
+            toast.error(`Fetch failed: ${message}`);
+        } finally {
+            setIsFetchingExternal(false);
+        }
+    };
+    // === END NEW HANDLER ===
+
+    // === ADD NEW Handler for Importing Selected Fixtures ===
+const handleImportSelected = async () => {
+    if (user?.role !== 'ADMIN' || !token || isNaN(roundId)) {
+        toast.error("Admin authentication required or invalid round.");
+        return;
+    }
+    if (selectedExternalIds.size === 0) {
+        toast.error("No fixtures selected to import.");
+        return;
+    }
+    // Prevent concurrent actions
+    if (isAddingFixture || isImporting || isDeletingFixture || isGeneratingResults || isFetchingExternal || isImportingSelected) return;
+
+    setIsImportingSelected(true);
+    setError(null); // Clear general errors
+    setFetchError(null); // Clear fetch error specifically
+
+    // Filter the potential fixtures based on the selected IDs
+    const fixturesToSubmit = potentialFixtures
+        .filter(fixture => selectedExternalIds.has(fixture.externalId))
+        .map(({ homeTeam, awayTeam, matchTime }) => ({ // Only send needed fields
+            homeTeam,
+            awayTeam,
+            matchTime
+        }));
+
+     console.log(`[handleImportSelected] Submitting ${fixturesToSubmit.length} fixtures for import into round ${roundId}`);
+
+    try {
+        const result = await importSelectedFixtures(token, roundId, fixturesToSubmit);
+        toast.success(result.message || `Imported ${result.count} fixtures successfully.`);
+        // Clear the selection and potential list after successful import
+        setPotentialFixtures([]);
+        setSelectedExternalIds(new Set());
+        setFetchError(null);
+        // Refresh the main list of fixtures for this round
+        await fetchRoundAndFixtures(roundId);
+    } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : 'Failed to import selected fixtures.';
+        toast.error(`Import failed: ${message}`);
+        // Optionally set the general error state as well
+        // setError(message);
+    } finally {
+        setIsImportingSelected(false);
+    }
+};
+// === END NEW HANDLER ===
+
+    // === ADD NEW Handlers for Checkbox Selection ===
+    const handlePotentialFixtureCheckChange = (externalId: number, checked: boolean) => {
+        setSelectedExternalIds(prev => {
+            const newSet = new Set(prev);
+            if (checked) {
+                newSet.add(externalId);
+            } else {
+                newSet.delete(externalId);
+            }
+            return newSet;
+        });
+    };
+
+    const handleSelectAllPotentialFixtures = (checked: boolean) => {
+        if (checked) {
+            // Select all currently displayed potential fixtures
+            setSelectedExternalIds(new Set(potentialFixtures.map(f => f.externalId)));
+        } else {
+            // Deselect all
+            setSelectedExternalIds(new Set());
+        }
+    };
+
 
     // --- Render Logic ---
     if (isNaN(roundId) && !isAuthLoading) { /* ... */ }
@@ -325,7 +460,17 @@ export default function AdminRoundFixturesPage() {
     if (!user || user.role !== 'ADMIN') { return <p className="p-4 text-red-600">Access Denied: You do not have permission to view this admin area.</p>; }
     if (!token) { /* ... */ }
 
-    const isAnyActionRunning = isAddingFixture || isImporting || isDeletingFixture || isGeneratingResults;
+    const isAnyActionRunning = isAddingFixture || isImporting || isDeletingFixture || isGeneratingResults || isFetchingExternal || isImportingSelected;
+
+    //console.log('LOADING STATES:', {
+        //isAddingFixture,
+        //isImporting, // Matchday import
+        //isDeletingFixture,
+        //isGeneratingResults, // Admin random generate
+        //isFetchingExternal, // Fetch potential by date
+        //isImportingSelected, // Import selected by date
+        //isAnyActionRunning // Combined result
+    //});
 
     return (
         <div className="p-4 md:p-6">
@@ -342,6 +487,136 @@ export default function AdminRoundFixturesPage() {
             {/* Admin Sections (Conditionally Rendered) */}
             {user?.role === 'ADMIN' && (
                 <>
+
+                    {/* === ADD THIS NEW SECTION === */}
+                <div className="mb-8 p-6 border rounded shadow-md bg-white border-blue-200">
+                <h2 className="text-xl font-semibold mb-4 text-blue-800">Import Fixtures by Date Range</h2>
+                <p className="text-sm text-gray-600 mb-4">
+                    Fetch fixtures directly from football-data.org for a specific competition within a date range.
+                    You can then select which ones to add to this round (Round {roundId}).
+                </p>
+
+                {/* Inputs for Date Range Import */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                     {/* Competition Dropdown */}
+                     <div className="md:col-span-2">
+                         <label htmlFor="importDateCompCode" className="block mb-1 font-medium text-gray-700 text-sm">Competition:</label>
+                         <select
+                              id="importDateCompCode"
+                              value={importDateCompCode}
+                              onChange={(e) => setImportDateCompCode(e.target.value)}
+                              className="border p-2 w-full rounded border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:bg-gray-100 bg-white"
+                              disabled={isAnyActionRunning}
+                              required
+                         >
+                             <option value="">-- Select Competition --</option>
+                             {COMPETITIONS.map(comp => (<option key={comp.code} value={comp.code}>{comp.name} ({comp.code})</option>))}
+                         </select>
+                     </div>
+                     {/* Start Date */}
+                     <div>
+                         <label htmlFor="startDate" className="block mb-1 font-medium text-gray-700 text-sm">Start Date:</label>
+                         <input
+                             id="startDate"
+                             type="date"
+                             value={startDate}
+                             onChange={(e) => setStartDate(e.target.value)}
+                             className="border p-2 w-full rounded border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:bg-gray-100"
+                             disabled={isAnyActionRunning}
+                             required
+                         />
+                     </div>
+                      {/* End Date */}
+                     <div>
+                         <label htmlFor="endDate" className="block mb-1 font-medium text-gray-700 text-sm">End Date:</label>
+                         <input
+                             id="endDate"
+                             type="date"
+                             value={endDate}
+                             onChange={(e) => setEndDate(e.target.value)}
+                             className="border p-2 w-full rounded border-gray-300 focus:border-blue-500 focus:ring focus:ring-blue-200 focus:ring-opacity-50 disabled:bg-gray-100"
+                             disabled={isAnyActionRunning}
+                             required
+                         />
+                     </div>
+                 </div>
+
+                 {/* Fetch Button and Error Display */}
+                 <div className="flex items-center justify-between mt-4">
+                     <button
+                         onClick={handleFetchExternal}
+                         className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
+                         disabled={isAnyActionRunning || !importDateCompCode || !startDate || !endDate}
+                     >
+                         {isFetchingExternal ? 'Fetching...' : 'Fetch Available Fixtures'}
+                     </button>
+                      {fetchError && <p className="text-sm text-red-600 ml-4">{fetchError}</p>}
+                 </div>
+
+                 {/* --- Display Potential Fixtures List --- */}
+                 {potentialFixtures.length > 0 && (
+                    <div className="mt-6 border-t border-gray-300 pt-4">
+                        <h3 className="text-lg font-semibold mb-3 text-gray-800">Potential Fixtures Found ({potentialFixtures.length}):</h3>
+                        <div className="mb-4 border rounded-md overflow-hidden">
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-10">
+                                            <input
+                                                type="checkbox"
+                                                className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-offset-0 focus:ring-indigo-200 focus:ring-opacity-50"
+                                                checked={selectedExternalIds.size > 0 && selectedExternalIds.size === potentialFixtures.length}
+                                                ref={input => { // Handle indeterminate state
+                                                    if (input) {
+                                                        input.indeterminate = selectedExternalIds.size > 0 && selectedExternalIds.size < potentialFixtures.length;
+                                                    }
+                                                }}
+                                                onChange={(e) => handleSelectAllPotentialFixtures(e.target.checked)}
+                                                title="Select/Deselect All"
+                                            />
+                                        </th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Home Team</th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Away Team</th>
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date & Time (UTC)</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {potentialFixtures.map((fixture) => (
+                                        <tr key={fixture.externalId}>
+                                            <td className="px-4 py-2 whitespace-nowrap">
+                                                <input
+                                                    type="checkbox"
+                                                    className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-offset-0 focus:ring-indigo-200 focus:ring-opacity-50"
+                                                    checked={selectedExternalIds.has(fixture.externalId)}
+                                                    onChange={(e) => handlePotentialFixtureCheckChange(fixture.externalId, e.target.checked)}
+                                                />
+                                            </td>
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{fixture.homeTeam}</td>
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-700">{fixture.awayTeam}</td>
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">{formatDateTime(fixture.matchTime)}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {/* Import Selected Button */}
+                        <div className="text-right">
+                            <button
+                                onClick={handleImportSelected} // <<< Add this handler in the next step
+                                className="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={isAnyActionRunning || selectedExternalIds.size === 0}
+                                title={`Import ${selectedExternalIds.size} selected fixture(s) into Round ${roundId}`}
+                            >
+                                {isImportingSelected ? 'Importing...' : `Import Selected (${selectedExternalIds.size})`}
+                            </button>
+                        </div>
+                    </div>
+                 )}
+                 {/* --- End Potential Fixtures List --- */}
+
+            </div>
+            {/* === END NEW SECTION === */}
+
                     {/* Import Fixtures Section */}
                     <div className="mb-8 p-6 border rounded shadow-md bg-white">
                         {/* ... content as before ... */}

@@ -881,6 +881,109 @@ router.get('/:roundId', protect, async (req, res, next) => {
     }
 });
 
+// =======================================================================
+// ===== NEW ROUTE: Import Selected External Fixtures into Round ========
+// =======================================================================
+/**
+ * @route   POST /api/rounds/:roundId/import-selected
+ * @desc    Import specific fixtures (fetched previously from external source) into this round
+ * @access  Private (Admin only)
+ */
+router.post('/:roundId/import-selected', protect, admin, async (req, res, next) => {
+    const { roundId } = req.params;
+    // Expecting: { fixturesToImport: [{ homeTeam: string, awayTeam: string, matchTime: string (ISO), externalId?: number }, ...] }
+    const { fixturesToImport } = req.body;
+
+    // --- Input Validation ---
+    const parsedRoundId = parseInt(roundId, 10);
+    if (isNaN(parsedRoundId)) {
+        return res.status(400).json({ message: 'Invalid Round ID.' });
+    }
+    if (!Array.isArray(fixturesToImport) || fixturesToImport.length === 0) {
+        return res.status(400).json({ message: 'Fixtures to import must be provided as a non-empty array.' });
+    }
+    // Basic validation of fixture objects (can be more detailed if needed)
+    for (const fix of fixturesToImport) {
+        if (!fix.homeTeam || !fix.awayTeam || !fix.matchTime) {
+             return res.status(400).json({ message: 'Each fixture to import must have homeTeam, awayTeam, and matchTime.' });
+        }
+        // Check if matchTime is a valid ISO string (basic check)
+         if (isNaN(new Date(fix.matchTime).getTime())) {
+             return res.status(400).json({ message: `Invalid matchTime format for fixture ${fix.homeTeam} vs ${fix.awayTeam}. ISO format required.` });
+         }
+    }
+    // --- End Validation ---
+
+    // Use client from pool for transaction
+    const getClient = db.getClient || (() => db.pool.connect());
+    const client = await getClient();
+
+    try {
+        console.log(`[API /rounds/:roundId/import-selected] Starting import for round ${parsedRoundId}, ${fixturesToImport.length} fixtures.`);
+
+        // 1. Verify Round Exists and is in suitable status (e.g., SETUP or OPEN)
+        const roundCheckRes = await client.query(
+            "SELECT status FROM rounds WHERE round_id = $1",
+            [parsedRoundId]
+        );
+        if (roundCheckRes.rows.length === 0) {
+            return res.status(404).json({ message: `Round with ID ${parsedRoundId} not found.` });
+        }
+        const roundStatus = roundCheckRes.rows[0].status;
+        if (roundStatus !== 'SETUP' && roundStatus !== 'OPEN') {
+             return res.status(400).json({ message: `Fixtures can only be imported into rounds with status SETUP or OPEN. Current status: ${roundStatus}` });
+        }
+
+        // 2. Start Transaction
+        await client.query('BEGIN');
+
+        // 3. Insert Fixtures (handle potential duplicates)
+        const insertQuery = `
+            INSERT INTO fixtures (round_id, home_team, away_team, match_time, status)
+            VALUES ($1, $2, $3, $4, 'SCHEDULED')
+            ON CONFLICT (round_id, home_team, away_team, match_time) -- Example constraint, adjust if yours is different!
+            DO NOTHING; -- Or DO UPDATE if you want to overwrite based on the constraint
+        `;
+        // Note: The ON CONFLICT requires a unique constraint in your DB on these columns.
+        // If you don't have one, you'd need to SELECT first to check for existence, which is less efficient.
+        // A constraint like (round_id, external_id) would be better if you stored external_id.
+        // Using (round_id, home_team, away_team, match_time) is a fallback but less robust if team names change slightly.
+
+        let successfullyImportedCount = 0;
+        for (const fixture of fixturesToImport) {
+            const result = await client.query(insertQuery, [
+                parsedRoundId,
+                fixture.homeTeam,
+                fixture.awayTeam,
+                fixture.matchTime // Already validated as valid ISO string
+            ]);
+            if (result.rowCount > 0) { // Check if a row was actually inserted (not skipped by ON CONFLICT)
+                successfullyImportedCount++;
+            }
+        }
+
+        // 4. Commit Transaction
+        await client.query('COMMIT');
+
+        console.log(`[API /rounds/:roundId/import-selected] Completed import for round ${parsedRoundId}. Inserted ${successfullyImportedCount} new fixtures out of ${fixturesToImport.length} selected.`);
+
+        res.status(201).json({
+            message: `Successfully imported ${successfullyImportedCount} fixtures into round ${parsedRoundId}. ${fixturesToImport.length - successfullyImportedCount} were already present or skipped.`,
+            count: successfullyImportedCount
+         });
+
+    } catch (error) {
+        if (client && !client._ending) {
+            try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Error during ROLLBACK:', rollbackError); }
+        }
+        console.error(`[API /rounds/:roundId/import-selected] Error importing fixtures into round ${parsedRoundId}:`, error);
+        next(error);
+    } finally {
+        if (client) { client.release(); }
+    }
+});
+// =======================================================================
+
 
 // Make sure to export the router
 module.exports = router;
