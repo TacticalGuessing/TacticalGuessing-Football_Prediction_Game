@@ -5,6 +5,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { toast } from 'react-hot-toast'; // <<< Import toast
+import { formatDateTime } from '@/utils/formatters';
 
 // Import AuthContext hook
 import { useAuth } from '@/context/AuthContext';
@@ -239,15 +240,15 @@ export default function DashboardPage() {
 
 
     // Helper Function for Date Formatting
-    const formatDateTime = (isoString: string | null | undefined): string => {
-        if (!isoString) return "Date unavailable";
-        try {
-            return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(isoString));
-        } catch (e) {
-            console.error("Error formatting date:", isoString, e);
-            return "Invalid Date";
-        }
-    };
+    //const formatDateTime = (isoString: string | null | undefined): string => {
+    //    if (!isoString) return "Date unavailable";
+     //   try {
+    //        return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short', hour12: false }).format(new Date(isoString));
+    //    } catch (e) {
+     //       console.error("Error formatting date:", isoString, e);
+      //      return "Invalid Date";
+    //    }
+    //};
 
     // --- Conditional Rendering: Loading States ---
     if (isAuthLoading) {
