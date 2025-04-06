@@ -1,8 +1,9 @@
 // frontend/src/lib/api.ts
+//import { toast } from 'react-hot-toast'; // <<< Ensure this is imported
 
 // Define the base URL for the API
-// Ensure NEXT_PUBLIC_API_URL is set in your .env.local file
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api'; // Adjusted default
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
+console.log(`[api.ts] API_BASE_URL configured as: ${API_BASE_URL}`);
 
 // --- Interfaces for API Data Structures ---
 
@@ -315,6 +316,53 @@ export const savePredictions = async (predictions: PredictionPayload[], token: s
     }, token);
      // No return value needed, fetchWithAuth throws on error
 };
+
+// ========================================================
+// ===== NEW FUNCTION: Generate Random Predictions ========
+// ========================================================
+/**
+ * Calls the backend to generate random predictions for the user for the active round.
+ * @param token - The user's authentication token.
+ * @returns A promise resolving to an object with message and count.
+ */
+export const generateRandomUserPredictions = async (token: string): Promise<{ message: string; count: number }> => {
+    const url = '/predictions/random'; // The new endpoint path
+    console.log(`%c[api.ts] Calling generateRandomUserPredictions: ${url}`, 'color: magenta;');
+
+    if (!token) {
+        console.error('%c[generateRandomUserPredictions] No token provided!', 'color: red;');
+        throw new Error("Authentication token is missing.");
+    }
+
+    try {
+        // Using POST method as defined in the backend route
+        const response = await fetchWithAuth(url, { method: 'POST' }, token);
+        console.log(`%c[generateRandomUserPredictions] fetchWithAuth successful`, 'color: magenta;');
+
+        const responseData = await response.json(); // Expect { message, count }
+
+        // Basic validation of the response structure
+        if (!responseData || typeof responseData.message !== 'string' || typeof responseData.count !== 'number') {
+            console.error('%c[generateRandomUserPredictions] Invalid response format:', 'color: red;', responseData);
+            throw new Error("Received invalid data format from server.");
+        }
+
+        console.log(`%c[generateRandomUserPredictions] Success response:`, 'color: magenta;', responseData);
+        return responseData; // Return { message, count }
+
+    } catch (error) {
+         console.error(`%c[generateRandomUserPredictions] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+         // Re-throw the error so the calling component can handle it (e.g., show toast)
+         // If error is already an Error object, rethrow it, otherwise create a new one
+         if (error instanceof Error) {
+            throw error;
+         } else {
+            // Fallback for non-Error exceptions
+            throw new Error('An unknown error occurred while generating random predictions.');
+         }
+    }
+};
+// ========================================================
 
 /**
  * Fetches a list of completed rounds (for standings dropdown).

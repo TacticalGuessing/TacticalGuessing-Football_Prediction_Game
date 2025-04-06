@@ -4,6 +4,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'react-hot-toast'; // <<< Import toast
 
 // Import AuthContext hook
 import { useAuth } from '@/context/AuthContext';
@@ -12,12 +13,12 @@ import { useAuth } from '@/context/AuthContext';
 import {
     getActiveRound,
     savePredictions,
-    ActiveRoundResponse, // Type for the response of getActiveRound
-    //PredictionPayload,   // Type for the payload when saving predictions
-    FixtureWithPrediction // Type for fixtures within ActiveRoundResponse
+    generateRandomUserPredictions, // <<< Import new function
+    ActiveRoundResponse,
+    FixtureWithPrediction
 } from '@/lib/api';
 
-// Local type for prediction input state (can be kept simple)
+// Local type for prediction input state
 interface PredictionInputState {
     home: number | null;
     away: number | null;
@@ -41,6 +42,9 @@ export default function DashboardPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState<string | null>(null);
     const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string | null>(null);
+
+    // --- NEW: State for Generate Random Process ---
+    const [isGeneratingRandom, setIsGeneratingRandom] = useState(false);
 
     // State for Deadline Check
     const [isDeadlinePassed, setIsDeadlinePassed] = useState(false);
@@ -131,6 +135,7 @@ export default function DashboardPage() {
                 };
             });
             setPredictions(initialPredictions);
+             // Clear messages on data load/refresh
             setSubmitError(null);
             setSubmitSuccessMessage(null);
         } else {
@@ -157,7 +162,7 @@ export default function DashboardPage() {
         });
     };
 
-    // Handler for Submitting Predictions (with fixes applied)
+    // Handler for Submitting Predictions
     const handleSubmitPredictions = async () => {
         if (!activeRoundData?.fixtures?.length) { setSubmitError("No active round or fixtures to submit."); return; }
         if (isDeadlinePassed) { setSubmitError("The deadline for this round has passed. Predictions are locked."); return; }
@@ -167,7 +172,6 @@ export default function DashboardPage() {
 
         const activeFixtureIds = new Set(activeRoundData.fixtures.map(f => f.fixtureId));
 
-        // --- FIX 1 applied: Removed explicit type annotation ---
         const predictionsToSubmit = Object.entries(predictions)
             .map(([fixtureIdStr, scores]) => {
                 const fixtureId = parseInt(fixtureIdStr, 10);
@@ -183,34 +187,55 @@ export default function DashboardPage() {
                 }
                 return null;
             })
-             // --- FIX 2 applied: Use simpler filter ---
-            .filter(p => p !== null); // Filter out the null values
+            .filter((p): p is { fixtureId: number; predictedHomeGoals: number; predictedAwayGoals: number; } => p !== null); // Type guard filter
 
-        // TypeScript now infers the correct type for predictionsToSubmit
-
-        if (!predictionsToSubmit.length) {
+        if (predictionsToSubmit.length === 0) { // Check length after filter
             setSubmitError("Please enter valid scores (0 or greater) for at least one fixture.");
             setIsSubmitting(false);
             return;
         }
 
-        // console.log('Formatted predictions being sent to API:', predictionsToSubmit);
-
         try {
-            // Pass the correctly inferred array
             await savePredictions(predictionsToSubmit, token);
-            // console.log('API Submission successful');
             setSubmitSuccessMessage("Predictions saved successfully!");
-            // Optional: Refetch data to show saved predictions if backend returns them
-            // await fetchRoundData();
+            // No automatic refetch here, success message is shown
         } catch (error: unknown) {
             console.error("Failed to submit predictions:", error);
             const errorMessage = (error instanceof Error) ? error.message : "An error occurred while saving predictions.";
             setSubmitError(errorMessage);
+            toast.error(`Save failed: ${errorMessage}`); // Add toast for save error
         } finally {
             setIsSubmitting(false);
         }
     };
+
+
+    // --- NEW: Handler for Generating Random Predictions ---
+    const handleGenerateRandom = async () => {
+        if (!activeRoundData?.fixtures?.length) { toast.error("No active round or fixtures found."); return; }
+        if (isDeadlinePassed) { toast.error("The deadline has passed, cannot generate predictions."); return; }
+        if (!token) { toast.error("Authentication token not found."); return; }
+        // Prevent concurrent actions
+        if (isGeneratingRandom || isSubmitting) return;
+
+        setIsGeneratingRandom(true);
+        setSubmitError(null); // Clear other messages
+        setSubmitSuccessMessage(null);
+
+        try {
+            const result = await generateRandomUserPredictions(token);
+            toast.success(result.message || `Generated random predictions for ${result.count} fixtures.`);
+            // Refresh the round data to show the new predictions in the input fields
+            await fetchRoundData();
+        } catch (error: unknown) {
+             console.error("Failed to generate random predictions:", error);
+             const errorMessage = (error instanceof Error) ? error.message : "An error occurred while generating predictions.";
+             toast.error(`Failed to generate random predictions: ${errorMessage}`);
+        } finally {
+            setIsGeneratingRandom(false);
+        }
+    };
+    // --- End New Handler ---
 
 
     // Helper Function for Date Formatting
@@ -228,12 +253,14 @@ export default function DashboardPage() {
     if (isAuthLoading) {
         return ( <div className="flex justify-center items-center min-h-screen bg-gray-100"><p className="text-lg font-semibold text-gray-600">Authenticating...</p></div> );
     }
-    // AuthProvider handles redirect, this is a fallback
     if (!user || !token) {
          console.warn("Dashboard rendering without user/token after auth check.");
-         return ( <div className="flex justify-center items-center min-h-screen bg-gray-100"><p className="text-red-600">User not authenticated.</p></div> );
+         // Assuming AuthProvider handles actual redirect, show message if somehow stuck here
+         return ( <div className="flex justify-center items-center min-h-screen bg-gray-100"><p className="text-red-600">User not authenticated. Redirecting...</p></div> );
     }
 
+    // Determine if any action is running
+    const isActionRunning = isSubmitting || isGeneratingRandom;
 
     // --- Main Dashboard Render ---
     return (
@@ -279,9 +306,9 @@ export default function DashboardPage() {
                                                     <span className="block md:inline text-xs text-gray-500 md:ml-3">({formatDateTime(fixture.matchTime)})</span>
                                                 </div>
                                                 <div className="flex items-center gap-2 w-full md:w-auto justify-end">
-                                                    <input type="number" min="0" placeholder="H" aria-label={`Home score prediction for ${fixture.homeTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isSubmitting} value={currentPrediction.home ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'home', e.target.value)} />
+                                                    <input type="number" min="0" placeholder="H" aria-label={`Home score prediction for ${fixture.homeTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isActionRunning} value={currentPrediction.home ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'home', e.target.value)} />
                                                     <span className="text-gray-400">-</span>
-                                                    <input type="number" min="0" placeholder="A" aria-label={`Away score prediction for ${fixture.awayTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isSubmitting} value={currentPrediction.away ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'away', e.target.value)} />
+                                                    <input type="number" min="0" placeholder="A" aria-label={`Away score prediction for ${fixture.awayTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isActionRunning} value={currentPrediction.away ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'away', e.target.value)} />
                                                 </div>
                                             </li>
                                         );
@@ -294,10 +321,27 @@ export default function DashboardPage() {
                                 <div className="mt-6 border-t pt-4 space-y-3">
                                     {submitSuccessMessage && (<div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert"><span className="block sm:inline">{submitSuccessMessage}</span></div>)}
                                     {submitError && (<div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert"><strong className="font-bold">Error! </strong><span className="block sm:inline">{submitError}</span></div>)}
-                                    <div className="text-right">
-                                        <button type="button" onClick={handleSubmitPredictions} className={`bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out ${isSubmitting || isDeadlinePassed ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={isSubmitting || isDeadlinePassed} >
-                                            {isSubmitting ? 'Saving...' : (isDeadlinePassed ? 'Deadline Passed' : 'Save Predictions')}
-                                        </button>
+                                    <div className="flex flex-col sm:flex-row justify-end items-center gap-3">
+                                         {/* Generate Random Button */}
+                                         <button
+                                             type="button"
+                                             onClick={handleGenerateRandom}
+                                             className={`bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-opacity-50 transition duration-150 ease-in-out text-sm ${isActionRunning || isDeadlinePassed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                             disabled={isActionRunning || isDeadlinePassed}
+                                             title="Fill all predictions with random scores (0-4)"
+                                         >
+                                             {isGeneratingRandom ? 'Generating...' : 'Generate Random'}
+                                         </button>
+
+                                         {/* Save Predictions Button */}
+                                         <button
+                                             type="button"
+                                             onClick={handleSubmitPredictions}
+                                             className={`bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out ${isActionRunning || isDeadlinePassed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                             disabled={isActionRunning || isDeadlinePassed}
+                                          >
+                                             {isSubmitting ? 'Saving...' : (isDeadlinePassed ? 'Deadline Passed' : 'Save Predictions')}
+                                         </button>
                                     </div>
                                 </div>
                             )}
