@@ -3,49 +3,12 @@ const express = require('express');
 const db = require('../db'); // Assuming db.js exports query function and pool object
 const { protect, admin } = require('../middleware/authMiddleware'); // Import middleware
 const axios = require('axios'); // <--- Added axios import
-
+const { calculatePoints } = require('../src/utils/scoringUtils');
 const router = express.Router();
 
 // --- Helper function for calculating points ---
 // Placed here for clarity and potential reuse within this file
-function calculatePoints(prediction, actualResult) {
-    // Destructure for easier access and clarity
-    const { predicted_home_goals, predicted_away_goals, is_joker } = prediction;
-    const { home_score, away_score } = actualResult;
 
-    // Ensure inputs are numbers before comparison
-    const predHome = Number(predicted_home_goals);
-    const predAway = Number(predicted_away_goals);
-    const actualHome = Number(home_score);
-    const actualAway = Number(away_score);
-
-    // Basic validation (should not happen if DB constraints are correct, but good practice)
-    if (isNaN(predHome) || isNaN(predAway) || isNaN(actualHome) || isNaN(actualAway)) {
-        console.error("Invalid non-numeric score detected during calculation:", prediction, actualResult);
-        return 0; // Return 0 points if data is corrupt
-    }
-
-    let basePoints = 0;
-
-    // Rule 1: Exact Score Match
-    if (predHome === actualHome && predAway === actualAway) {
-        basePoints = 3;
-    } else {
-        // Rule 2: Correct Outcome Match (if not exact score)
-        const predictedOutcome = predHome > predAway ? 'H' : (predHome < predAway ? 'A' : 'D');
-        const actualOutcome = actualHome > actualAway ? 'H' : (actualHome < actualAway ? 'A' : 'D');
-
-        if (predictedOutcome === actualOutcome) {
-            basePoints = 1;
-        }
-        // Rule 3 (Incorrect Prediction) is implicitly handled as basePoints remains 0
-    }
-
-    // Apply Joker Bonus (check if is_joker is explicitly true)
-    // NOTE: Your DB query selects is_joker, make sure it's used if joker feature is active
-    const finalPoints = prediction.is_joker === true ? basePoints * 2 : basePoints;
-    return finalPoints;
-}
 
 
 // ======================================================

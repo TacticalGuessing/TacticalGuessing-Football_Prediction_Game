@@ -4,17 +4,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react'; // Added useRef
 import { getStandings, getCompletedRounds, SimpleRound, StandingEntry } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
+import MovementIndicator from '@/components/Standings/MovementIndicator';
 
-// MovementIndicator Component (Keep as before)
-const MovementIndicator = ({ movement }: { movement: number | null }) => {
-  if (movement === null || movement === 0) {
-    return <span className="text-gray-500">–</span>;
-  } else if (movement > 0) {
-    return <span className="text-green-600 font-semibold">▲{movement}</span>;
-  } else {
-    return <span className="text-red-600 font-semibold">▼{Math.abs(movement)}</span>;
-  }
-};
+
 
 export default function StandingsPage() {
     // --- Add a render counter ---
