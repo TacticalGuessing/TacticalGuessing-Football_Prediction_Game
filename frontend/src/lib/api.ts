@@ -77,14 +77,14 @@ export interface PredictionPayload {
     fixtureId: number;
     predictedHomeGoals: number | null; // Allow null initially
     predictedAwayGoals: number | null; // Allow null initially
-    // isJoker?: boolean; // Add later if needed
+    isJoker?: boolean; // *** MODIFIED: Uncommented for Joker feature ***
 }
 
 // Combined type used in Dashboard/ActiveRound fetch
 export interface FixtureWithPrediction extends Fixture {
     predictedHomeGoals: number | null; // Use null consistently
     predictedAwayGoals: number | null; // Use null consistently
-    isJoker?: boolean;
+    isJoker?: boolean; // Already correctly includes isJoker
 }
 
 
@@ -312,14 +312,15 @@ export const getActiveRound = async (token: string): Promise<ActiveRoundResponse
 export const savePredictions = async (predictions: PredictionPayload[], token: string): Promise<void> => {
     // Backend expects { predictions: [...] } where each prediction uses camelCase keys
     const payload = {
+        // Map the input array (which now includes isJoker) to the format expected by the backend
         predictions: predictions.map(p => ({
             fixtureId: p.fixtureId,                 // Send camelCase
             predictedHomeGoals: p.predictedHomeGoals, // Send camelCase
             predictedAwayGoals: p.predictedAwayGoals, // Send camelCase
-            // isJoker: p.isJoker // Add if joker is implemented (keep camelCase)
+            isJoker: p.isJoker // *** MODIFIED: Uncommented to send joker status ***
         }))
     };
-    await fetchWithAuth('/predictions', { // Endpoint should accept camelCase
+    await fetchWithAuth('/predictions', { // Endpoint POST /api/predictions accepts this payload
         method: 'POST',
         body: JSON.stringify(payload),
     }, token);
@@ -688,7 +689,7 @@ export const fetchExternalFixtures = async (
         if (data.length > 0 && (typeof data[0].externalId !== 'number' || typeof data[0].homeTeam !== 'string')) {
              console.error('%c[fetchExternalFixtures] Response array items have incorrect structure.', 'color: red;', data[0]);
              throw new Error("Received invalid fixture data structure from server.");
-        }
+         }
 
         return data as PotentialFixture[]; // Cast to expected type
 

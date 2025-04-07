@@ -1,238 +1,329 @@
-// backend/routes/predictions.js
-const express = require('express');
-const db = require('../db'); // Ensure this path is correct
-const { protect } = require('../middleware/authMiddleware'); // Ensure middleware is correct
+// ==== REPLACE ENTIRE CONTENTS of backend/routes/predictions.js WITH THIS ====
 
+const express = require('express');
+const { PrismaClient } = require('@prisma/client');
+const { protect } = require('../middleware/authMiddleware');
+const { calculatePoints } = require('../src/utils/scoringUtils');
+
+const prisma = new PrismaClient();
 const router = express.Router();
 
-// POST /api/predictions - Submit/update predictions for the logged-in user
-router.post('/', protect, async (req, res, next) => {
-    // ... (Existing code for POST / ... )
-     if (!req.user || typeof req.user.userId === 'undefined') { // <<< Added typeof check
-          console.error("[API /predictions POST] User ID missing from request after protect middleware.");
-          return res.status(401).json({ message: 'User authentication failed or user ID not found.' });
-     }
-     const userId = req.user.userId;
-     const { predictions } = req.body;
-
-     if (!Array.isArray(predictions) || predictions.length === 0) {
-         return res.status(400).json({ message: 'Invalid input: Predictions array is required and cannot be empty.' });
-     }
-
-     for (const p of predictions) {
-         if (p.fixtureId == null || p.predictedHomeGoals == null || p.predictedAwayGoals == null) {
-              return res.status(400).json({ message: 'Invalid input: Each prediction must include fixtureId, predictedHomeGoals, and predictedAwayGoals.' });
-         }
-         if (!Number.isInteger(p.fixtureId) || p.fixtureId <= 0) {
-             return res.status(400).json({ message: `Invalid input: Invalid fixtureId ${p.fixtureId}.` });
-         }
-         const homeGoals = p.predictedHomeGoals;
-         const awayGoals = p.predictedAwayGoals;
-         if (!Number.isInteger(homeGoals) || homeGoals < 0 ||
-             !Number.isInteger(awayGoals) || awayGoals < 0) {
-             return res.status(400).json({ message: `Invalid input: Scores must be non-negative integers for fixture ${p.fixtureId}.` });
-         }
-     }
-     const fixtureIds = predictions.map(p => p.fixtureId);
-
-     // Use client from the pool for transactions
-     // Note: Ensure db object exports a pool or a getClient function
-     const getClient = db.getClient || (() => db.pool.connect()); // Adapt based on your db export
-     const client = await getClient();
-
-     try {
-         const validationQuery = `
-             SELECT f.fixture_id, f.round_id, r.deadline, r.status AS round_status
-             FROM fixtures f JOIN rounds r ON f.round_id = r.round_id
-             WHERE f.fixture_id = ANY($1::int[])
-         `;
-         const { rows: fixtureData } = await client.query(validationQuery, [fixtureIds]);
-
-         if (fixtureData.length !== fixtureIds.length) {
-             const foundIds = new Set(fixtureData.map(f => f.fixture_id));
-             const missingIds = fixtureIds.filter(id => !foundIds.has(id));
-             console.error(`Validation Error: Fixture IDs not found or invalid for user ${userId}: ${missingIds.join(', ')}`);
-             await client.query('ROLLBACK'); client.release();
-             return res.status(404).json({ message: `Error: One or more submitted fixtures do not exist: ${missingIds.join(', ')}.` });
-         }
-         const roundIds = new Set(fixtureData.map(f => f.round_id));
-         if (roundIds.size > 1) {
-             console.error(`Validation Error: Predictions span multiple rounds for user ${userId}. Fixture IDs: ${fixtureIds.join(', ')}`);
-             await client.query('ROLLBACK'); client.release();
-             return res.status(400).json({ message: 'Error: Predictions must all belong to the same round.' });
-         }
-         const commonRoundId = fixtureData[0].round_id;
-         const roundDeadline = new Date(fixtureData[0].deadline);
-         const roundStatus = fixtureData[0].round_status;
-         const now = new Date();
-         if (now > roundDeadline) {
-             console.warn(`User ${userId} attempted prediction submission after deadline for round ${commonRoundId}.`);
-             await client.query('ROLLBACK'); client.release();
-             return res.status(403).json({ message: 'The deadline for submitting predictions for this round has passed.' });
-         }
-         const allowedStatuses = ['OPEN'];
-         if (!allowedStatuses.includes(roundStatus)) {
-              console.warn(`User ${userId} attempted prediction submission for a round ${commonRoundId} with status ${roundStatus}.`);
-              await client.query('ROLLBACK'); client.release();
-              return res.status(403).json({ message: `Predictions are not currently accepted for this round (Status: ${roundStatus}).` });
-         }
-
-         await client.query('BEGIN');
-         const upsertQuery = `
-             INSERT INTO predictions (user_id, fixture_id, round_id, predicted_home_goals, predicted_away_goals, submitted_at)
-             VALUES ($1, $2, $3, $4, $5, NOW())
-             ON CONFLICT (user_id, fixture_id)
-             DO UPDATE SET predicted_home_goals = EXCLUDED.predicted_home_goals, predicted_away_goals = EXCLUDED.predicted_away_goals, submitted_at = NOW()
-             RETURNING prediction_id;
-         `;
-         const upsertPromises = predictions.map(p => {
-             return client.query(upsertQuery, [ userId, p.fixtureId, commonRoundId, p.predictedHomeGoals, p.predictedAwayGoals ]);
-         });
-         await Promise.all(upsertPromises);
-         await client.query('COMMIT');
-
-         res.status(201).json({ message: 'Predictions saved successfully.' });
-
-     } catch (error) {
-         if (client && !client._ending) {
-             try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Error during ROLLBACK:', rollbackError); }
-         }
-         console.error(`Error saving predictions for user ${userId}:`, error);
-         next(error);
-     } finally {
-         if (client) { client.release(); }
-     }
+// --- Test Route (Keep for verification) ---
+router.get('/test', (req, res) => {
+  console.log(`[${new Date().toISOString()}] GET /test hit!`);
+  res.status(200).send('Predictions test route OK');
 });
 
-
-// GET /api/predictions/round/:roundId/me - Get current user's predictions for a specific round
-router.get('/round/:roundId/me', protect, async (req, res, next) => {
-    // ... (Existing code for GET /round/:roundId/me ...)
-     if (!req.user || typeof req.user.userId === 'undefined') { // <<< Added typeof check
-         return res.status(401).json({ message: 'User authentication failed or user ID not found.' });
-     }
-     const userId = req.user.userId;
-     const { roundId } = req.params;
-     const parsedRoundId = parseInt(roundId, 10);
-     if (isNaN(parsedRoundId) || parsedRoundId <= 0) {
-         return res.status(400).json({ message: 'Invalid Round ID provided.' });
-     }
-
-     try {
-         const result = await db.query(
-            `SELECT
-                 p.prediction_id AS "predictionId", p.predicted_home_goals AS "predictedHomeGoals", p.predicted_away_goals AS "predictedAwayGoals",
-                 p.points_awarded AS "pointsAwarded", p.submitted_at AS "submittedAt", p.is_joker AS "isJoker",
-                 f.fixture_id AS "fixtureId", COALESCE(f.home_team, 'N/A') AS "homeTeam", COALESCE(f.away_team, 'N/A') AS "awayTeam",
-                 f.match_time AS "matchTime", f.home_score AS "homeScore", f.away_score AS "awayScore"
-             FROM predictions p JOIN fixtures f ON p.fixture_id = f.fixture_id
-             WHERE p.user_id = $1 AND f.round_id = $2
-             ORDER BY f.match_time ASC NULLS LAST, f.fixture_id ASC`,
-             [userId, parsedRoundId]
-         );
-         res.status(200).json(result.rows);
-     } catch (err) {
-         console.error(`Error fetching predictions for user ${userId}, round ${roundId}:`, err);
-         next(err);
-     }
-});
-
-
-// =======================================================================
-// ===== NEW ROUTE: Generate Random Predictions for Active Round ========
-// =======================================================================
+// --- POST /random ---
 /**
  * @route   POST /api/predictions/random
- * @desc    Generate random predictions (0-4) for the current user for all fixtures in the 'OPEN' round.
- *          This will overwrite any existing predictions the user has for this round.
- * @access  Private (Logged-in users)
+ * @desc    Generate random predictions (0-4 goals) for the active 'OPEN' round fixtures for the user
+ * @access  Protected
  */
 router.post('/random', protect, async (req, res, next) => {
-    // Ensure req.user and req.user.userId are populated by 'protect' middleware
-    if (!req.user || typeof req.user.userId === 'undefined') { // <<< Added typeof check
-         console.error('[API /predictions/random] User ID not found in request after protect middleware.');
-         return res.status(401).json({ message: "Authentication error: User ID missing." });
+    const userId = req.user?.userId;
+    if (!userId) {
+        return res.status(401).json({ message: 'Authentication error: User ID missing.' });
     }
-    const userId = req.user.userId;
 
-    // Use client from the pool for transactions
-    const getClient = db.getClient || (() => db.pool.connect()); // Adapt based on your db export
-    const client = await getClient();
+    console.log(`[${new Date().toISOString()}] User ${userId} calling /random`);
 
     try {
-        console.log(`[API /predictions/random] User ${userId} requested random predictions.`);
+        // Find active round including fixtures
+        console.log(`[${new Date().toISOString()}] Finding active round for /random...`);
+        const activeRound = await prisma.round.findFirst({
+            where: { status: 'OPEN' },
+            include: { fixtures: true }, // Include all fixture data
+            orderBy: { deadline: 'asc' },
+        });
+        console.log(`[${new Date().toISOString()}] Active round query completed for /random.`);
 
-        // 1. Find the 'OPEN' round (using round_id)
-        const openRoundRes = await client.query(
-            "SELECT round_id FROM rounds WHERE status = 'OPEN' LIMIT 1"
-        );
-
-        if (openRoundRes.rows.length === 0) {
-            console.log(`[API /predictions/random] No 'OPEN' round found for user ${userId}.`);
-            return res.status(404).json({ message: "No active round currently open for predictions." });
-        }
-        const openRoundId = openRoundRes.rows[0].round_id;
-        console.log(`[API /predictions/random] Found OPEN round ${openRoundId}.`);
-
-        // 2. Find all fixtures for the 'OPEN' round (using fixture_id, round_id)
-        const fixturesRes = await client.query(
-            "SELECT fixture_id FROM fixtures WHERE round_id = $1",
-            [openRoundId]
-        );
-        const fixtureIds = fixturesRes.rows.map(f => f.fixture_id);
-
-        if (fixtureIds.length === 0) {
-            console.log(`[API /predictions/random] No fixtures found for OPEN round ${openRoundId}.`);
-            return res.status(200).json({ message: "Active round has no fixtures, no predictions generated.", count: 0 });
-        }
-        console.log(`[API /predictions/random] Found ${fixtureIds.length} fixtures for round ${openRoundId}.`);
-
-        // 3. Generate random scores and UPSERT predictions within a transaction
-        await client.query('BEGIN'); // Start transaction
-
-        let generatedCount = 0;
-        const maxScore = 4; // Generate scores from 0 to 4
-
-        for (const fixtureId of fixtureIds) {
-            const randomHomeGoals = Math.floor(Math.random() * (maxScore + 1)); // 0 to maxScore inclusive
-            const randomAwayGoals = Math.floor(Math.random() * (maxScore + 1)); // 0 to maxScore inclusive
-
-            // Upsert using confirmed column names and unique constraint
-            // Constraint based on Prisma: predictions_user_id_fixture_id_key on (user_id, fixture_id)
-            const upsertQuery = `
-                INSERT INTO predictions (user_id, fixture_id, round_id, predicted_home_goals, predicted_away_goals, submitted_at)
-                VALUES ($1, $2, $3, $4, $5, NOW())
-                ON CONFLICT (user_id, fixture_id) -- Assumes constraint is on these columns
-                DO UPDATE SET
-                    predicted_home_goals = EXCLUDED.predicted_home_goals,
-                    predicted_away_goals = EXCLUDED.predicted_away_goals,
-                    submitted_at = NOW();
-            `;
-            await client.query(upsertQuery, [userId, fixtureId, openRoundId, randomHomeGoals, randomAwayGoals]);
-            generatedCount++;
+        if (!activeRound) {
+            console.log(`[${new Date().toISOString()}] No active round found for /random.`);
+            return res.status(400).json({ message: 'No active round found for generating predictions.' });
         }
 
-        await client.query('COMMIT'); // Commit transaction
-        console.log(`[API /predictions/random] Successfully generated/updated ${generatedCount} predictions for user ${userId}, round ${openRoundId}.`);
+        // Access model field names (camelCase)
+        const roundId = activeRound.roundId;
+        const deadline = activeRound.deadline;
+        const fixtures = activeRound.fixtures;
+        console.log(`[${new Date().toISOString()}] Found active round ${roundId} for /random.`);
 
-        res.status(200).json({
-            message: `Successfully generated random predictions for ${generatedCount} fixtures.`,
-            count: generatedCount
+        if (!fixtures || fixtures.length === 0) {
+            console.log(`[${new Date().toISOString()}] No fixtures found in active round ${roundId} for /random.`);
+            return res.status(400).json({ message: 'No fixtures found in the active round to predict.' });
+        }
+        const fixtureIds = fixtures.map(f => f.fixtureId); // Use camelCase fixtureId
+        console.log(`[${new Date().toISOString()}] Fixture IDs for /random: ${fixtureIds.join(', ')}`);
+
+        // Validate roundId
+        if (typeof roundId !== 'number' || roundId <= 0) {
+             console.error(`[${new Date().toISOString()}] FATAL: Invalid roundId (${roundId}) in /random.`);
+             return res.status(500).json({ message: 'Internal server error: Invalid round ID.' });
+        }
+
+        // Check deadline
+        const now = new Date();
+        if (!deadline || now > new Date(deadline)) {
+            console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in /random.`);
+            return res.status(400).json({ message: 'Prediction deadline has passed or is invalid.' });
+        }
+
+        // Prepare upsert operations
+        const maxRandomScore = 4;
+        console.log(`[${new Date().toISOString()}] Preparing ${fixtureIds.length} upsert operations for /random.`);
+        const upsertOperations = fixtureIds.map(fixtureId => {
+            const randomHomeGoals = Math.floor(Math.random() * (maxRandomScore + 1));
+            const randomAwayGoals = Math.floor(Math.random() * (maxRandomScore + 1));
+
+            return prisma.prediction.upsert({
+                where: {
+                    userId_fixtureId: {
+                        userId: userId,
+                        fixtureId: fixtureId,
+                    }
+                },
+                create: {
+                    userId: userId,
+                    fixtureId: fixtureId,
+                    roundId: roundId,
+                    // *** CORRECTED: Use camelCase model field names ***
+                    predictedHomeGoals: randomHomeGoals,
+                    predictedAwayGoals: randomAwayGoals,
+                    // --- End Correction ---
+                    isJoker: false,
+                },
+                update: {
+                    // *** CORRECTED: Use camelCase model field names ***
+                    predictedHomeGoals: randomHomeGoals,
+                    predictedAwayGoals: randomAwayGoals,
+                    // --- End Correction ---
+                    isJoker: false,
+                    
+                },
+            });
         });
 
+        // Execute transaction
+        console.log(`[${new Date().toISOString()}] Executing transaction for /random...`);
+        const result = await prisma.$transaction(upsertOperations);
+        console.log(`[${new Date().toISOString()}] Transaction completed for /random. Result count: ${result.length}`);
+
+        console.log(`[${new Date().toISOString()}] User ${userId} generated random predictions for ${result.length} fixtures in round ${roundId}.`);
+        res.status(200).json({ message: 'Random predictions generated successfully.', count: result.length });
+
     } catch (error) {
-        // Ensure rollback happens on any error during the try block
-        if (client && !client._ending) { // Add check for client._ending
-            try { await client.query('ROLLBACK'); } catch (rollbackError) { console.error('Error during ROLLBACK:', rollbackError); }
-        }
-        console.error(`[API /predictions/random] Error generating random predictions for user ${userId}:`, error);
-        next(error); // Pass error to global handler
-    } finally {
-        // ALWAYS release the client back to the pool in a finally block
-        if (client) { client.release(); }
+        console.error(`[${new Date().toISOString()}] Error in /random handler for user ${userId}:`, error);
+        next(error);
     }
-});
+}); // End of POST /random
+
+
+// --- POST / ---
+/**
+ * @route   POST /api/predictions
+ * @desc    Submit or update predictions for the active 'OPEN' round
+ * @access  Protected
+ */
+router.post('/', protect, async (req, res, next) => {
+    const { predictions } = req.body;
+    const userId = req.user?.userId;
+
+    console.log(`[${new Date().toISOString()}] User ${userId} calling POST /predictions with ${predictions?.length ?? 0} predictions.`);
+
+    // Basic validation
+    if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
+    if (!Array.isArray(predictions)) { return res.status(400).json({ message: 'Invalid request format: "predictions" must be an array.' }); }
+
+    // Payload validation
+    for (const pred of predictions) {
+        if (typeof pred.fixtureId !== 'number' || pred.fixtureId <= 0) {
+            console.warn(`[${new Date().toISOString()}] Invalid fixtureId in payload:`, pred);
+            return res.status(400).json({ message: 'Invalid fixture ID found in predictions.' });
+        }
+        if (pred.predictedHomeGoals !== null && (!Number.isInteger(pred.predictedHomeGoals) || pred.predictedHomeGoals < 0)) {
+            console.warn(`[${new Date().toISOString()}] Invalid home goals in payload:`, pred);
+            return res.status(400).json({ message: `Invalid predicted home goals for fixture ${pred.fixtureId}. Must be null or a non-negative integer.` });
+        }
+        if (pred.predictedAwayGoals !== null && (!Number.isInteger(pred.predictedAwayGoals) || pred.predictedAwayGoals < 0)) {
+            console.warn(`[${new Date().toISOString()}] Invalid away goals in payload:`, pred);
+            return res.status(400).json({ message: `Invalid predicted away goals for fixture ${pred.fixtureId}. Must be null or a non-negative integer.` });
+        }
+        if (pred.isJoker !== undefined && typeof pred.isJoker !== 'boolean') {
+            console.warn(`[${new Date().toISOString()}] Invalid isJoker in payload:`, pred);
+            return res.status(400).json({ message: `Invalid isJoker value for fixture ${pred.fixtureId}. Must be true or false if provided.` });
+        }
+    }
+
+    try {
+        // Find active round
+        console.log(`[${new Date().toISOString()}] Finding active round for POST /predictions...`);
+        const activeRound = await prisma.round.findFirst({
+            where: { status: 'OPEN' },
+            select: { roundId: true, deadline: true },
+            orderBy: { deadline: 'asc' },
+        });
+        console.log(`[${new Date().toISOString()}] Active round query completed for POST /predictions.`);
+
+        if (!activeRound) {
+            console.log(`[${new Date().toISOString()}] No active round found for POST /predictions.`);
+            return res.status(400).json({ message: 'No active round found for submitting predictions.' });
+        }
+        const roundId = activeRound.roundId;
+        const deadline = activeRound.deadline;
+        console.log(`[${new Date().toISOString()}] Found active round ${roundId} for POST /predictions.`);
+
+        // Validate roundId
+        if (typeof roundId !== 'number' || roundId <= 0) {
+            console.error(`[${new Date().toISOString()}] FATAL: Invalid roundId (${roundId}) in POST /predictions.`);
+            return res.status(500).json({ message: 'Internal server error: Invalid round ID.' });
+        }
+
+        // Check deadline
+        const now = new Date();
+        if (!deadline || now > new Date(deadline)) {
+            console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in POST /predictions.`);
+            return res.status(400).json({ message: 'Prediction deadline has passed or is invalid.' });
+        }
+
+        // Validate Joker Count
+        const jokerPredictionsCount = predictions.filter(p => p.isJoker === true).length;
+        if (jokerPredictionsCount > 1) {
+             console.warn(`[${new Date().toISOString()}] User ${userId} attempted to submit ${jokerPredictionsCount} jokers for round ${roundId}.`);
+             return res.status(400).json({ message: 'You can only mark one prediction as a Joker per round.' });
+        }
+
+        // Prepare upsert operations
+        console.log(`[${new Date().toISOString()}] Preparing ${predictions.length} upsert operations for POST /predictions.`);
+        const upsertOperations = predictions.map(prediction => {
+            const homeGoals = prediction.predictedHomeGoals === null ? null : Number(prediction.predictedHomeGoals);
+            const awayGoals = prediction.predictedAwayGoals === null ? null : Number(prediction.predictedAwayGoals);
+            const isJokerValue = prediction.isJoker ?? false;
+
+            return prisma.prediction.upsert({
+                where: {
+                    userId_fixtureId: {
+                        userId: userId,
+                        fixtureId: prediction.fixtureId,
+                    }
+                },
+                create: {
+                    userId: userId,
+                    fixtureId: prediction.fixtureId,
+                    roundId: roundId,
+                    // *** CORRECTED: Use camelCase model field names ***
+                    predictedHomeGoals: homeGoals,
+                    predictedAwayGoals: awayGoals,
+                    // --- End Correction ---
+                    isJoker: isJokerValue,
+                },
+                update: {
+                    // *** CORRECTED: Use camelCase model field names ***
+                    predictedHomeGoals: homeGoals,
+                    predictedAwayGoals: awayGoals,
+                    // --- End Correction ---
+                    isJoker: isJokerValue,
+                    
+                },
+            });
+        });
+
+        // Execute transaction
+        console.log(`[${new Date().toISOString()}] Executing transaction for POST /predictions...`);
+        const result = await prisma.$transaction(upsertOperations);
+        console.log(`[${new Date().toISOString()}] Transaction completed for POST /predictions. Result count: ${result.length}`);
+
+        const message = result.length > 0 ? 'Predictions submitted successfully.' : 'No prediction data needed updating.';
+        console.log(`[${new Date().toISOString()}] User ${userId} successful POST /predictions for round ${roundId}.`);
+        res.status(200).json({ message: message, count: result.length });
+
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error in POST /predictions handler for user ${userId}:`, error);
+        if (error.code === 'P2003') {
+             const field = error.meta?.field_name;
+             console.error(`[${new Date().toISOString()}] Foreign key constraint violation potentially on field: ${field}`);
+             return res.status(400).json({ message: `Invalid input: One or more fixture IDs provided do not belong to the active round.` });
+         }
+        next(error);
+    }
+}); // End of POST /
+
+
+// --- GET /points/:roundId ---
+/**
+ * @route   GET /api/predictions/points/:roundId
+ * @desc    Get points awarded for a specific COMPLETED round for the logged-in user
+ * @access  Protected
+ */
+router.get('/points/:roundId', protect, async (req, res, next) => {
+    const userId = req.user?.userId;
+    const { roundId: roundIdParam } = req.params;
+
+    if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
+    const roundId = parseInt(roundIdParam, 10);
+    if (isNaN(roundId)) { return res.status(400).json({ message: 'Invalid Round ID.' }); }
+
+    try {
+        // Verify Round exists and is COMPLETED
+        const round = await prisma.round.findUnique({
+            where: { roundId: roundId }, // Use model field name
+            select: { status: true }
+        });
+
+        if (!round) { return res.status(404).json({ message: 'Round not found.' }); }
+        if (round.status !== 'COMPLETED') { return res.status(400).json({ message: `Points are only available for COMPLETED rounds. This round status is: ${round.status}` }); }
+
+        // Fetch predictions
+        const predictions = await prisma.prediction.findMany({
+            where: { userId: userId, roundId: roundId }, // Use model field names
+            select: {
+                fixtureId: true,
+                predictedHomeGoals: true, // model field name
+                predictedAwayGoals: true, // model field name
+                pointsAwarded: true,      // model field name
+                isJoker: true,
+                fixture: {
+                    select: {
+                        homeTeam: true,   // model field name
+                        awayTeam: true,   // model field name
+                        homeScore: true,  // model field name
+                        awayScore: true,  // model field name
+                        matchTime: true   // model field name
+                    }
+                }
+            },
+            orderBy: { fixture: { matchTime: 'asc' } } // Use model field names
+        });
+
+        // Calculate total points
+        const totalPoints = predictions.reduce((sum, pred) => sum + (pred.pointsAwarded ?? 0), 0);
+
+        // Map to response
+        const responseData = {
+            roundId: roundId,
+            totalPoints: totalPoints,
+            predictions: predictions.map(p => ({
+                fixtureId: p.fixtureId,
+                predictedHomeGoals: p.predictedHomeGoals,
+                predictedAwayGoals: p.predictedAwayGoals,
+                pointsAwarded: p.pointsAwarded,
+                isJoker: p.isJoker,
+                homeTeam: p.fixture.homeTeam,
+                awayTeam: p.fixture.awayTeam,
+                homeScore: p.fixture.homeScore,
+                awayScore: p.fixture.awayScore,
+                matchTime: p.fixture.matchTime
+            }))
+        };
+
+        res.status(200).json(responseData);
+
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error fetching points for user ${userId}, round ${roundId}:`, error);
+        next(error);
+    }
+}); // End of GET /points/:roundId
+
+module.exports = router;
+
 // =======================================================================
-
-
-module.exports = router; // Ensure router is exported
