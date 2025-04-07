@@ -4,8 +4,9 @@
 // Import necessary React hooks and types
 import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link'; // <<< Import Link
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'react-hot-toast'; // <<< Import react-hot-toast
+import { toast } from 'react-hot-toast';
 
 // Import API functions and types
 import {
@@ -20,7 +21,7 @@ import {
 
 // Import necessary components
 import EditRoundModal from '@/components/Admin/EditRoundModal';
-import ConfirmationModal from '@/components/Modal/ConfirmationModal'; // <<< Import ConfirmationModal
+import ConfirmationModal from '@/components/Modal/ConfirmationModal';
 
 // Define the payload type for updating round details
 interface UpdateRoundPayload {
@@ -45,11 +46,9 @@ export default function AdminRoundsPage() {
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingRound, setEditingRound] = useState<Round | null>(null);
     const [editError, setEditError] = useState<string | null>(null);
-
-    // --- NEW: State for Delete Confirmation Modal ---
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
-    const [roundToDelete, setRoundToDelete] = useState<Round | null>(null); // Store the whole round object
-    const [isDeleting, setIsDeleting] = useState(false); // Loading state specifically for deletion API call
+    const [roundToDelete, setRoundToDelete] = useState<Round | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     // Function to fetch rounds
     const fetchRounds = useCallback(async () => {
@@ -68,13 +67,16 @@ export default function AdminRoundsPage() {
 
     // Effect to handle initial load & auth check
     useEffect(() => {
+        // Redirect if not admin (after auth check is done)
         if (!isAuthLoading && (!user || user.role !== 'ADMIN')) {
-             router.push('/dashboard');
+             router.replace('/dashboard'); // Use replace to avoid back navigation to admin
              return;
         }
+        // Fetch rounds if authenticated and still loading state
         if (token && isLoading) {
             fetchRounds();
         } else if (!isAuthLoading && !token){
+            // If auth check done but no token, set error (though redirect should handle)
             setError("Authentication required.");
             setIsLoading(false);
         }
@@ -85,172 +87,126 @@ export default function AdminRoundsPage() {
         setActionLoading(prev => ({ ...prev, [roundId]: isLoading }));
     };
 
-    // Handler for creating round
+    // --- Handlers ---
+
     const handleCreateRoundSubmit = async (e: FormEvent) => {
         e.preventDefault();
         if (!token) return;
         if (!newRoundName.trim() || !newRoundDeadline) {
-             toast.error("Round Name and Prediction Deadline are required."); // Use toast
-             return;
+             toast.error("Round Name and Prediction Deadline are required."); return;
          }
-        setIsCreating(true);
-        setCreateError(null);
-        setError(null);
+        setIsCreating(true); setCreateError(null); setError(null);
         try {
             await createRound({ name: newRoundName, deadline: newRoundDeadline }, token);
-            setNewRoundName('');
-            setNewRoundDeadline('');
-            await fetchRounds();
-            toast.success('Round created successfully!'); // Use toast
+            setNewRoundName(''); setNewRoundDeadline('');
+            await fetchRounds(); toast.success('Round created successfully!');
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to create round';
-            setCreateError(errorMsg); // Keep inline error for form
-            toast.error(`Creation failed: ${errorMsg}`); // Also show toast
-        } finally {
-             setIsCreating(false);
-        }
+            setCreateError(errorMsg); toast.error(`Creation failed: ${errorMsg}`);
+        } finally { setIsCreating(false); }
     };
 
-    // Handler for status change
-     const handleStatusChange = async (roundId: number, newStatus: 'SETUP' | 'OPEN' | 'CLOSED') => {
+    const handleStatusChange = async (roundId: number, newStatus: 'SETUP' | 'OPEN' | 'CLOSED') => {
          if (!token) return;
-         setRoundActionLoading(roundId, true);
-         setError(null);
+         setRoundActionLoading(roundId, true); setError(null);
          try {
              await updateRoundStatus(roundId, { status: newStatus }, token);
-             await fetchRounds(); // Refresh list on success
-             toast.success(`Round ${roundId} status updated to ${newStatus}.`); // Toast feedback
+             await fetchRounds(); toast.success(`Round ${roundId} status updated to ${newStatus}.`);
          } catch (err: unknown) {
               const errorMsg = err instanceof Error ? err.message : `Failed to update status for round ${roundId}`;
-              setError(errorMsg); // Set general error
-              toast.error(`Status update failed: ${errorMsg}`); // Toast feedback
-         } finally {
-              setRoundActionLoading(roundId, false);
-         }
+              setError(errorMsg); toast.error(`Status update failed: ${errorMsg}`);
+         } finally { setRoundActionLoading(roundId, false); }
      };
 
-    // Handler for triggering scoring
-     const handleTriggerScoring = async (roundId: number) => {
+    const handleTriggerScoring = async (roundId: number) => {
           if (!token) return;
-          setRoundActionLoading(roundId, true);
-          setError(null);
+          setRoundActionLoading(roundId, true); setError(null);
           try {
               await triggerScoring(roundId, token);
-              toast.success(`Scoring triggered for round ${roundId}. Status will update.`); // Toast feedback
-              // Keep delay before refreshing
-              setTimeout(fetchRounds, 1500);
+              toast.success(`Scoring triggered for round ${roundId}. Status will update.`);
+              setTimeout(fetchRounds, 1500); // Refresh after a delay
           } catch (err: unknown) {
               const errorMsg = err instanceof Error ? err.message : `Failed to trigger scoring for round ${roundId}`;
-              setError(errorMsg);
-              toast.error(`Scoring trigger failed: ${errorMsg}`); // Toast feedback
-          } finally {
-              setRoundActionLoading(roundId, false);
-          }
+              setError(errorMsg); toast.error(`Scoring trigger failed: ${errorMsg}`);
+          } finally { setRoundActionLoading(roundId, false); }
       };
 
-    // --- MODIFIED: Handler to open the delete confirmation modal ---
     const openDeleteConfirmModal = (round: Round) => {
-        setRoundToDelete(round); // Store the round object
-        setIsConfirmDeleteOpen(true); // Open the modal
+        setRoundToDelete(round); setIsConfirmDeleteOpen(true);
     };
 
-    // --- MODIFIED: Handler for closing the delete confirmation modal ---
     const closeDeleteConfirmModal = () => {
-        setIsConfirmDeleteOpen(false);
-        setRoundToDelete(null); // Clear the round object
-        setIsDeleting(false); // Ensure loading state is reset
+        setIsConfirmDeleteOpen(false); setRoundToDelete(null); setIsDeleting(false);
     };
 
-    // --- MODIFIED: Handler for actually deleting the round (called by modal confirm) ---
     const handleConfirmDelete = async () => {
-        if (!token || !roundToDelete) return; // Safety check
-
-        const roundIdToDelete = roundToDelete.roundId; // Get ID from stored object
-        setIsDeleting(true); // Set deleting loading state
-        setRoundActionLoading(roundIdToDelete, true); // Also set general action loading
-        setError(null); // Clear general errors
-
+        if (!token || !roundToDelete) return;
+        const roundIdToDelete = roundToDelete.roundId;
+        setIsDeleting(true); setRoundActionLoading(roundIdToDelete, true); setError(null);
         try {
             await deleteRound(roundIdToDelete, token);
-            await fetchRounds(); // Refresh list
-            toast.success(`Round "${roundToDelete.name}" deleted successfully!`); // Toast feedback
-            closeDeleteConfirmModal(); // Close modal on success
+            await fetchRounds(); toast.success(`Round "${roundToDelete.name}" deleted successfully!`);
+            closeDeleteConfirmModal();
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : `Failed to delete round ${roundToDelete.name}`;
-            setError(errorMsg); // Set general error
-            toast.error(`Deletion failed: ${errorMsg}`); // Toast feedback
-            // Keep modal open on error? Or close? Let's close for now.
-            closeDeleteConfirmModal(); // Optionally keep open by removing this
+            setError(errorMsg); toast.error(`Deletion failed: ${errorMsg}`);
+            closeDeleteConfirmModal(); // Close even on error
         } finally {
-            // States are reset in closeDeleteConfirmModal or success path
-            // Reset loading states even if already closed (belt and suspenders)
-            setIsDeleting(false);
-            setRoundActionLoading(roundIdToDelete, false);
+            setIsDeleting(false); setRoundActionLoading(roundIdToDelete, false);
         }
     };
 
-    // Handler to open edit modal
     const handleOpenEditModal = (round: Round) => {
-        setEditingRound(round);
-        setIsEditModalOpen(true);
-        setEditError(null);
+        setEditingRound(round); setIsEditModalOpen(true); setEditError(null);
     };
 
-    // Handler to close edit modal
     const handleCloseEditModal = () => {
-        setIsEditModalOpen(false);
-        setEditingRound(null);
-        setEditError(null);
+        setIsEditModalOpen(false); setEditingRound(null); setEditError(null);
     };
 
-    // Handler for updating round
     const handleUpdateRound = async (updatedData: UpdateRoundPayload) => {
         if (!token || !editingRound) return;
-        if (updatedData.name === editingRound.name && updatedData.deadline === editingRound.deadline) {
-            handleCloseEditModal();
-            return;
-        }
+        // Optional: Check if data actually changed before API call
+        // if (updatedData.name === editingRound.name && updatedData.deadline === editingRound.deadline) {
+        //     handleCloseEditModal(); return;
+        // }
         const roundIdToUpdate = editingRound.roundId;
-        setRoundActionLoading(roundIdToUpdate, true);
-        setEditError(null); // Clear previous modal errors
-        setError(null); // Clear general errors
-
+        setRoundActionLoading(roundIdToUpdate, true); setEditError(null); setError(null);
         try {
             await updateRoundDetails(roundIdToUpdate, updatedData, token);
-            await fetchRounds();
-            handleCloseEditModal();
-            toast.success(`Round "${updatedData.name || editingRound.name}" updated successfully!`); // Toast feedback
+            await fetchRounds(); handleCloseEditModal();
+            toast.success(`Round "${updatedData.name || editingRound.name}" updated successfully!`);
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to update round details.';
-            console.error("Error updating round:", err);
-            setEditError(errorMsg); // Set error state FOR THE MODAL
-            toast.error(`Update failed: ${errorMsg}`); // Toast feedback
-        } finally {
-             setRoundActionLoading(roundIdToUpdate, false);
-        }
+            console.error("Error updating round:", err); setEditError(errorMsg);
+            toast.error(`Update failed: ${errorMsg}`);
+        } finally { setRoundActionLoading(roundIdToUpdate, false); }
     };
-
 
     // --- Render Logic ---
 
-    if (isAuthLoading || (isLoading && rounds.length === 0 && !error)) {
+    // Show loading state until auth is checked and initial round fetch attempt is done
+    if (isAuthLoading || isLoading) {
         return <div className="p-4 text-center">Loading Admin Data...</div>;
     }
+    // This should ideally be handled by layout/middleware, but double-check here
     if (!user || user.role !== 'ADMIN') {
-        return <p className="p-4 text-red-600">Access Denied: You do not have permission to view this admin area.</p>;
+        // Redirect should have happened in useEffect, show message if somehow still here
+        return <p className="p-4 text-red-600">Access Denied.</p>;
     }
 
     // Main component rendering
     return (
         <div className="p-4 md:p-6">
-            <h1 className="text-2xl font-bold mb-6">Admin - Manage Rounds</h1>
+            <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
 
             {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">Error: {error}</p>}
 
-            {/* Create Round Form (Conditionally Rendered) */}
-            {user?.role === 'ADMIN' && (
-                 <div className="bg-white p-4 rounded shadow border border-gray-200 mb-6">
-                    {/* ... (form content remains the same) ... */}
+            {/* Grid for Admin Sections */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+
+                {/* Create Round Form */}
+                 <div className="bg-white p-4 rounded shadow border border-gray-200">
                     <h2 className="text-lg font-semibold mb-3">Create New Round</h2>
                     {createError && <p className="text-red-500 text-sm mb-3">Error: {createError}</p>}
                     <form onSubmit={handleCreateRoundSubmit} className="space-y-4">
@@ -266,66 +222,71 @@ export default function AdminRoundsPage() {
                         <div className="text-right"> <button type="submit" disabled={isCreating} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"> {isCreating ? 'Creating...' : 'Create Round'} </button> </div>
                     </form>
                  </div>
-            )}
+
+                 {/* === NEW: Audit Link Section === */}
+                 <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
+                    <h2 className="text-xl font-semibold mb-3 text-gray-700">Audit & Verification</h2>
+                    <Link href="/admin/audit" className="text-blue-600 hover:underline block font-medium">
+                        Prediction Audit Tool →
+                    </Link>
+                     <p className="text-sm text-gray-500 mt-1">View user predictions vs results for completed rounds.</p>
+                 </div>
+                 {/* === END NEW SECTION === */}
+
+            </div> {/* End Grid */}
+
 
             {/* Rounds List Table */}
-            <h2 className="text-xl font-semibold mt-8 mb-4">Existing Rounds</h2>
+            <h2 className="text-xl font-semibold mt-8 mb-4">Manage Existing Rounds</h2>
             <div className="overflow-x-auto shadow rounded border-b border-gray-200 bg-white">
                  <table className="min-w-full divide-y divide-gray-200">
                      <thead className="bg-gray-100">
-                          {/* ... (table headers remain the same) ... */}
-                            <tr>
-                                <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                                <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Name</th>
-                                <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Deadline</th>
-                                <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-                                {user?.role === 'ADMIN' && (
-                                    <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
-                                )}
-                            </tr>
+                        <tr>
+                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
+                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Name</th>
+                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Deadline</th>
+                            <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
+                            <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
+                        </tr>
                      </thead>
                      <tbody className="bg-white divide-y divide-gray-200">
-                          {isLoading && rounds.length === 0 ? (
-                                <tr><td colSpan={user?.role === 'ADMIN' ? 5 : 4} className="text-center py-4 px-4 text-gray-500 italic">Loading rounds...</td></tr>
-                          ) : rounds.length === 0 ? (
-                                <tr><td colSpan={user?.role === 'ADMIN' ? 5 : 4} className="text-center py-4 px-4 text-gray-500 italic">No rounds found.</td></tr>
+                          {/* Loading/Empty Row */}
+                          {!isLoading && rounds.length === 0 && !error ? (
+                                <tr><td colSpan={5} className="text-center py-4 px-4 text-gray-500 italic">No rounds found. Create one above!</td></tr>
                           ) : (
                                 rounds.map((round) => (
                                      <tr key={round.roundId} className="hover:bg-gray-50 transition-colors duration-150">
-                                          {/* ... (ID, Name, Deadline, Status cells remain the same) ... */}
+                                          {/* Data Cells */}
                                           <td className="py-3 px-4 whitespace-nowrap text-sm">{round.roundId}</td>
                                           <td className="py-3 px-4 whitespace-nowrap text-sm">{round.name}</td>
                                           <td className="py-3 px-4 whitespace-nowrap text-sm">
-                                              {new Date(round.deadline).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short' })}
+                                              {new Date(round.deadline).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short', hour12: false })}
                                           </td>
                                           <td className="py-3 px-4 whitespace-nowrap text-sm text-center font-medium">
                                               <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                                  round.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
                                                  round.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
                                                  round.status === 'CLOSED' ? 'bg-red-100 text-red-800' :
-                                                 'bg-gray-100 text-gray-800' // SETUP
+                                                 'bg-gray-100 text-gray-800'
                                               }`}>
                                                   {round.status}
                                               </span>
                                           </td>
-                                          {/* Action Cells (Conditionally Rendered) */}
-                                          {user?.role === 'ADMIN' && (
-                                            <td className="py-3 px-4 whitespace-nowrap text-sm text-center space-x-1">
-                                                {actionLoading[round.roundId] && !isDeleting ? <span className="text-xs italic">Working...</span> : ( // Show 'working' unless deleting
+                                          {/* Action Buttons Cell */}
+                                          <td className="py-3 px-4 whitespace-nowrap text-sm text-center space-x-1">
+                                                {actionLoading[round.roundId] && !isDeleting ? <span className="text-xs italic">Working...</span> : (
                                                      <>
                                                           <button onClick={() => handleOpenEditModal(round)} className="text-indigo-600 hover:text-indigo-900" title="Edit Round Details" disabled={isDeleting}> Edit </button>
                                                           <button onClick={() => router.push(`/admin/rounds/${round.roundId}/fixtures`)} className="text-blue-600 hover:text-blue-900" title="Manage Fixtures" disabled={isDeleting}> Fixtures </button>
                                                           {round.status === 'SETUP' && ( <button onClick={() => handleStatusChange(round.roundId, 'OPEN')} className="text-green-600 hover:text-green-900" title="Open Round" disabled={isDeleting}>Open</button> )}
                                                           {round.status === 'OPEN' && ( <button onClick={() => handleStatusChange(round.roundId, 'CLOSED')} className="text-red-600 hover:text-red-900" title="Close Round" disabled={isDeleting}>Close</button> )}
                                                           {round.status === 'CLOSED' && ( <button onClick={() => handleTriggerScoring(round.roundId)} className="text-purple-600 hover:text-purple-900" title="Trigger Scoring" disabled={isDeleting}>Score</button> )}
-                                                          {/* --- MODIFIED: Delete Button calls openDeleteConfirmModal --- */}
                                                           <button onClick={() => openDeleteConfirmModal(round)} className="text-red-600 hover:text-red-900 ml-2" title="Delete Round" disabled={isDeleting || actionLoading[round.roundId]}>
-                                                            {isDeleting && roundToDelete?.roundId === round.roundId ? 'Deleting...' : 'Delete'} {/* Show deleting state */}
+                                                            {isDeleting && roundToDelete?.roundId === round.roundId ? 'Deleting...' : 'Delete'}
                                                           </button>
                                                      </>
                                                 )}
                                             </td>
-                                          )}
                                      </tr>
                                 ))
                           )}
@@ -333,8 +294,8 @@ export default function AdminRoundsPage() {
                  </table>
             </div>
 
-            {/* Edit Round Modal (Conditionally Rendered) */}
-            {user?.role === 'ADMIN' && editingRound && (
+            {/* Edit Round Modal */}
+            {editingRound && (
                  <EditRoundModal
                      isOpen={isEditModalOpen}
                      round={editingRound}
@@ -345,25 +306,25 @@ export default function AdminRoundsPage() {
                  />
              )}
 
-             {/* --- NEW: Render Delete Confirmation Modal --- */}
-             {user?.role === 'ADMIN' && roundToDelete && (
+             {/* Delete Confirmation Modal */}
+             {roundToDelete && (
                 <ConfirmationModal
                     isOpen={isConfirmDeleteOpen}
                     onClose={closeDeleteConfirmModal}
                     onConfirm={handleConfirmDelete}
                     title={`Delete Round: ${roundToDelete.name}?`}
-                    message={ // Use ReactNode for formatting
+                    message={
                         <>
-                            <p>Are you sure you want to delete round &quot;{roundToDelete.name}&quot; (ID: {roundToDelete.roundId})?</p>
+                            <p>Are you sure you want to delete round &ldquot;{roundToDelete.name}&ldquot; (ID: {roundToDelete.roundId})?</p>
                             <p className="font-semibold text-red-700 mt-2">This will also delete ALL associated fixtures and predictions.</p>
                             <p className="font-semibold text-red-700">This action cannot be undone.</p>
                         </>
                     }
                     confirmText="Delete Round"
-                    isConfirming={isDeleting} // Pass loading state
+                    isConfirming={isDeleting}
                 />
              )}
 
-        </div>
+        </div> // End main container div
     );
 }

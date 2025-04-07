@@ -170,6 +170,30 @@ export interface ImportFixturesResponse { // Keep this defined if used elsewhere
     count: number;
 }
 
+// --- NEW: Admin Audit Specific Interfaces ---
+
+export interface AdminUserSelectItem {
+    userId: number;
+    name: string;
+}
+
+export interface AdminPredictionDetail {
+    fixtureId: number;
+    predictedHomeGoals: number | null;
+    predictedAwayGoals: number | null;
+    isJoker: boolean;
+    pointsAwarded: number | null;
+    fixture: { // Nested fixture data
+        homeTeam: string;
+        awayTeam: string;
+        homeScore: number | null;
+        awayScore: number | null;
+        matchTime: string; // ISO Date string
+    };
+}
+
+// --- END: Admin Audit Specific Interfaces ---
+
 
 // --- Helper Function ---
 
@@ -747,6 +771,99 @@ export const importSelectedFixtures = async (
         throw error; // Re-throw
     }
 };
+
+// --- NEW: Admin Audit API Functions ---
+
+/**
+ * Fetches a list of all users (ID and Name) for admin selection.
+ * Assumes backend returns camelCase directly.
+ * @param token Admin user's authentication token.
+ * @returns Promise resolving to an array of AdminUserSelectItem.
+ */
+export const getAdminUserList = async (token: string): Promise<AdminUserSelectItem[]> => {
+    const url = '/admin/users'; // Matches backend route GET /api/admin/users
+    console.log(`%c[api.ts] Calling getAdminUserList: ${url}`, 'color: purple;');
+
+    if (!token) throw new Error("Authentication token is missing.");
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'GET' }, token);
+        console.log(`%c[getAdminUserList] fetchWithAuth successful`, 'color: purple;');
+
+        const data = await response.json(); // Expect backend to return array directly (camelCase)
+
+        if (!Array.isArray(data)) {
+            console.error('%c[getAdminUserList] Invalid response format (expected array):', 'color: red;', data);
+            throw new Error("Received invalid data format from server.");
+        }
+
+        // Basic check on first item structure before casting
+        if (data.length > 0 && (typeof data[0].userId !== 'number' || typeof data[0].name !== 'string')) {
+             console.error('%c[getAdminUserList] Response array items have incorrect structure.', 'color: red;', data[0]);
+             throw new Error("Received invalid user data structure from server.");
+        }
+
+        console.log(`%c[getAdminUserList] Success response (count: ${data.length})`, 'color: purple;');
+        return data as AdminUserSelectItem[]; // Cast to expected type
+
+    } catch (error) {
+         console.error(`%c[getAdminUserList] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+         if (error instanceof Error) { throw error; }
+         else { throw new Error('An unknown error occurred while fetching the user list.'); }
+    }
+};
+
+
+/**
+ * Fetches the detailed prediction audit for a specific user and completed round.
+ * Assumes backend returns camelCase directly.
+ * @param userId The ID of the user to audit.
+ * @param roundId The ID of the completed round to audit.
+ * @param token Admin user's authentication token.
+ * @returns Promise resolving to an array of AdminPredictionDetail.
+ */
+export const getAdminUserRoundPredictions = async (
+    userId: number,
+    roundId: number,
+    token: string
+): Promise<AdminPredictionDetail[]> => {
+    // Construct the URL with parameters
+    const url = `/admin/users/${userId}/predictions/${roundId}`; // Matches backend route GET /api/admin/users/:userId/predictions/:roundId
+    console.log(`%c[api.ts] Calling getAdminUserRoundPredictions: ${url}`, 'color: purple;');
+
+    if (!token) throw new Error("Authentication token is missing.");
+    if (!userId || userId <= 0) throw new Error("Invalid User ID provided.");
+    if (!roundId || roundId <= 0) throw new Error("Invalid Round ID provided.");
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'GET' }, token);
+        console.log(`%c[getAdminUserRoundPredictions] fetchWithAuth successful`, 'color: purple;');
+
+        const data = await response.json(); // Expect backend to return array directly (camelCase)
+
+        if (!Array.isArray(data)) {
+            console.error('%c[getAdminUserRoundPredictions] Invalid response format (expected array):', 'color: red;', data);
+            throw new Error("Received invalid data format from server.");
+        }
+
+        // Add more detailed structure check if desired before casting
+        if (data.length > 0 && (typeof data[0].fixtureId !== 'number' || typeof data[0].fixture?.homeTeam !== 'string')) {
+             console.error('%c[getAdminUserRoundPredictions] Response array items have incorrect structure.', 'color: red;', data[0]);
+             throw new Error("Received invalid prediction detail structure from server.");
+         }
+
+        console.log(`%c[getAdminUserRoundPredictions] Success response (count: ${data.length})`, 'color: purple;');
+        return data as AdminPredictionDetail[]; // Cast to expected type
+
+    } catch (error) {
+         console.error(`%c[getAdminUserRoundPredictions] CATCH BLOCK Error for User ${userId}, Round ${roundId}:`, 'color: red; font-weight: bold;', error);
+         if (error instanceof Error) { throw error; }
+         else { throw new Error('An unknown error occurred while fetching prediction details.'); }
+    }
+};
+
+// --- END: Admin Audit API Functions ---
+
 // ============================
 // ==========================================================
 
@@ -754,5 +871,5 @@ export const importSelectedFixtures = async (
 // Consistent approach: Frontend uses camelCase internally. API functions map
 // snake_case responses from backend to camelCase using helpers. Payloads
 // are sent as camelCase, assuming backend endpoints handle/expect this or map it internally.
-// Specific endpoints confirmed to return camelCase (like /login, /rounds/active, /standings)
+// Specific endpoints confirmed/assumed to return camelCase (like /login, /rounds/active, /standings, /admin/*)
 // skip explicit mapping but rely on backend contract.

@@ -26,6 +26,13 @@ router.post('/random', protect, async (req, res, next) => {
         return res.status(401).json({ message: 'Authentication error: User ID missing.' });
     }
 
+    // *** ADD THIS ROLE CHECK ***
+    if (req.user.role === 'ADMIN') {
+        console.warn(`[${new Date().toISOString()}] Admin user ${userId} forbidden attempt POST /predictions/random`);
+        return res.status(403).json({ message: 'Forbidden: Admins cannot submit predictions.' });
+    }
+    // *** END ROLE CHECK ***
+
     console.log(`[${new Date().toISOString()}] User ${userId} calling /random`);
 
     try {
@@ -133,6 +140,14 @@ router.post('/', protect, async (req, res, next) => {
 
     // Basic validation
     if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
+
+    // *** ADD THIS ROLE CHECK ***
+    if (req.user.role === 'ADMIN') {
+        console.warn(`[${new Date().toISOString()}] Admin user ${userId} forbidden attempt POST /predictions`);
+        return res.status(403).json({ message: 'Forbidden: Admins cannot submit predictions.' });
+    }
+    // *** END ROLE CHECK ***
+
     if (!Array.isArray(predictions)) { return res.status(400).json({ message: 'Invalid request format: "predictions" must be an array.' }); }
 
     // Payload validation
