@@ -194,6 +194,44 @@ export interface AdminPredictionDetail {
 
 // --- END: Admin Audit Specific Interfaces ---
 
+// --- NEW: Round Summary Interfaces ---
+
+export interface RoundSummaryStats {
+    exactScoresCount: number;
+    successfulJokersCount: number;
+    totalPredictions: number;
+    // totalPointsScored?: number; // Optional if we add it back later
+}
+
+export interface RoundTopScorer {
+    userId: number | null; // Allow null just in case ID is missing
+    name: string;
+    points: number;
+}
+
+export interface OverallLeader {
+    userId: number | null;
+    name: string;
+    totalPoints: number;
+}
+
+export interface TopJokerPlayer {
+    userId: number | null;
+    name: string;
+    successfulJokers: number;
+}
+
+export interface RoundSummaryResponse {
+    roundId: number;
+    roundName: string;
+    roundStats: RoundSummaryStats;
+    topScorersThisRound: RoundTopScorer[];
+    overallLeaders: OverallLeader[];
+    topJokerPlayers: TopJokerPlayer[];
+}
+
+// --- END: Round Summary Interfaces ---
+
 
 // --- Helper Function ---
 
@@ -861,6 +899,49 @@ export const getAdminUserRoundPredictions = async (
          else { throw new Error('An unknown error occurred while fetching prediction details.'); }
     }
 };
+
+// --- NEW: Round Summary API Function ---
+
+/**
+ * Fetches the summary statistics for a specific completed round.
+ * Assumes backend returns camelCase directly.
+ * @param roundId The ID of the completed round.
+ * @param token User's authentication token.
+ * @returns Promise resolving to RoundSummaryResponse.
+ */
+export const getRoundSummary = async (
+    roundId: number,
+    token: string
+): Promise<RoundSummaryResponse> => {
+    const url = `/rounds/${roundId}/summary`; // Matches backend route
+    console.log(`%c[api.ts] Calling getRoundSummary: ${url}`, 'color: teal;');
+
+    if (!token) throw new Error("Authentication token is missing.");
+    if (!roundId || roundId <= 0) throw new Error("Invalid Round ID provided.");
+
+    try {
+        const response = await fetchWithAuth(url, { method: 'GET' }, token);
+        console.log(`%c[getRoundSummary] fetchWithAuth successful`, 'color: teal;');
+
+        const data = await response.json(); // Expect backend to return the full object
+
+        // Add validation checks for the expected structure
+        if (!data || typeof data.roundId !== 'number' || !data.roundStats || typeof data.roundStats.exactScoresCount !== 'number') {
+            console.error('%c[getRoundSummary] Invalid response format:', 'color: red;', data);
+            throw new Error("Received invalid summary data format from server.");
+        }
+
+        console.log(`%c[getRoundSummary] Success response for round ${roundId}`, 'color: teal;');
+        return data as RoundSummaryResponse; // Cast to expected type
+
+    } catch (error) {
+         console.error(`%c[getRoundSummary] CATCH BLOCK Error for Round ${roundId}:`, 'color: red; font-weight: bold;', error);
+         if (error instanceof Error) { throw error; }
+         else { throw new Error('An unknown error occurred while fetching the round summary.'); }
+    }
+};
+
+// --- END: Round Summary API Function ---
 
 // --- END: Admin Audit API Functions ---
 

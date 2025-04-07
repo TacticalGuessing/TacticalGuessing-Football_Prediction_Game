@@ -5,7 +5,8 @@ const { protect, admin } = require('../middleware/authMiddleware'); // Import mi
 const axios = require('axios'); // <--- Added axios import
 const { calculatePoints } = require('../src/utils/scoringUtils');
 const router = express.Router();
-
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
 // --- Helper function for calculating points ---
 // Placed here for clarity and potential reuse within this file
 
@@ -781,6 +782,181 @@ router.put('/:roundId', protect, admin, async (req, res, next) => {
     }
 });
 // ========== NEW PUT ROUTE HANDLER ENDS HERE ==========
+
+// --- NEW: GET /api/rounds/:roundId/summary ---
+/**
+ * @route   GET /api/rounds/:roundId/summary
+ * @desc    Get summary statistics for a specific completed round
+ * @access  Protected (Any logged-in user)
+ */
+router.get('/:roundId/summary', protect, async (req, res, next) => {
+    const { roundId: roundIdParam } = req.params;
+    const requestingUserId = req.user.userId; // For logging
+
+    console.log(`[${new Date().toISOString()}] User ${requestingUserId} requesting summary for Round ${roundIdParam}`);
+
+    const roundId = parseInt(roundIdParam, 10);
+    if (isNaN(roundId) || roundId <= 0) {
+        return res.status(400).json({ message: 'Invalid Round ID.' });
+    }
+
+    try {
+        // 1. Verify Round exists and is COMPLETED
+        const round = await prisma.round.findUnique({
+            where: { roundId: roundId },
+            select: { roundId: true, name: true, status: true } // Fetch name too
+        });
+
+        if (!round) {
+             console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not found.`);
+            return res.status(404).json({ message: 'Round not found.' });
+        }
+        if (round.status !== 'COMPLETED') {
+             console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not COMPLETED (Status: ${round.status}).`);
+            return res.status(400).json({ message: `Summary is only available for COMPLETED rounds. This round status is: ${round.status}` });
+        }
+
+        console.log(`[${new Date().toISOString()}] Fetching summary data for Round ${roundId}...`);
+
+        // 2. Fetch data in parallel using Prisma transaction
+        // NOTE: Order matters for accessing results below
+        const [
+            // Query 0: Top Scorers THIS ROUND
+            rawTopScorers,
+            // Query 1: Overall Leaders (All completed rounds)
+            rawOverallLeaders,
+            // Query 2: Top Joker Players (Count successful jokers overall)
+            rawTopJokers,
+            // Query 3: All predictions for this specific round (for stats)
+            allRoundPredictions
+        ] = await prisma.$transaction([
+            // Query 0: Top Scorers THIS ROUND
+            prisma.prediction.groupBy({
+                by: ['userId'],
+                where: { roundId: roundId },
+                _sum: { pointsAwarded: true }, // Sum points for THIS round
+                orderBy: { _sum: { pointsAwarded: 'desc' } },
+                take: 3
+            }),
+            // Query 1: Overall Leaders (Sum points across ALL completed rounds)
+            prisma.prediction.groupBy({
+                by: ['userId'],
+                where: { round: { status: 'COMPLETED' } },
+                _sum: { pointsAwarded: true }, // Sum points across all completed
+                orderBy: { _sum: { pointsAwarded: 'desc' } },
+                take: 3
+            }),
+            // Query 2: Top Joker Players (Count successful jokers overall)
+            prisma.prediction.groupBy({
+                by: ['userId'],
+                where: {
+                    isJoker: true,
+                    pointsAwarded: { gt: 0 }, // Points > 0 means successful
+                    round: { status: 'COMPLETED' } // Only from completed rounds
+                },
+                _count: { userId: true }, // Count the successful joker predictions per user
+                orderBy: { _count: { userId: 'desc' } },
+                take: 3
+            }),
+            // Query 3: Fetch all predictions for this round (for exact/joker counts THIS round)
+             prisma.prediction.findMany({
+                where: { roundId: roundId },
+                select: { pointsAwarded: true, isJoker: true }
+            })
+        ]);
+
+        // Post-process the data
+        console.log(`[${new Date().toISOString()}] Raw summary data fetched for Round ${roundId}. Processing...`);
+
+        // --- Calculate Round Stats from allRoundPredictions (Index 3) ---
+        let exactScoresCount = 0;
+        let successfulJokersCount = 0;
+        allRoundPredictions.forEach(p => {
+            if (p?.pointsAwarded === 3) {
+                exactScoresCount++;
+            }
+            // A successful joker requires points > 0 AND isJoker = true
+            // The Joker score itself might be 2 or 6, so check > 0
+            if (p?.isJoker === true && p?.pointsAwarded !== null && p.pointsAwarded > 0) {
+                successfulJokersCount++;
+            }
+        });
+        // --- End Calculate Round Stats ---
+
+        // Extract User IDs from all groupBy results (Indices 0, 1, 2)
+        const userIdsToFetch = new Set();
+        rawTopScorers.forEach(item => { if (item && item.userId) userIdsToFetch.add(item.userId); });
+        rawOverallLeaders.forEach(item => { if (item && item.userId) userIdsToFetch.add(item.userId); });
+        rawTopJokers.forEach(item => { if (item && item.userId) userIdsToFetch.add(item.userId); });
+
+        // Fetch user names
+        let userMap = new Map();
+        if (userIdsToFetch.size > 0) {
+             const userIdsArray = Array.from(userIdsToFetch);
+             console.log(`[${new Date().toISOString()}] Fetching names for user IDs: ${userIdsArray}`);
+            const users = await prisma.user.findMany({
+                where: { userId: { in: userIdsArray } },
+                select: { userId: true, name: true }
+            });
+            users.forEach(user => userMap.set(user.userId, user.name));
+             console.log(`[${new Date().toISOString()}] User names fetched.`);
+        }
+
+        // --- DEBUG LOGS (Keep temporarily) ---
+         console.log("--- DEBUG: Raw Data Before Mapping ---");
+         console.log("Raw topScorersThisRoundData (Idx 0):", JSON.stringify(rawTopScorers, null, 2));
+         console.log("Raw overallLeadersData (Idx 1):", JSON.stringify(rawOverallLeaders, null, 2));
+         console.log("Raw topJokerPlayersData (Idx 2):", JSON.stringify(rawTopJokers, null, 2));
+         console.log("User Map:", userMap);
+         console.log("--------------------------------------");
+         // --- END DEBUG LOGS ---
+
+
+        // Map results to final format
+        const topScorersThisRound = rawTopScorers.map(item => ({
+            userId: item?.userId,
+            name: userMap.get(item?.userId) || 'Unknown User',
+            points: item?._sum?.pointsAwarded ?? 0 // Sum of points for THIS round
+        }));
+
+        const overallLeaders = rawOverallLeaders.map(item => ({
+            userId: item?.userId,
+            name: userMap.get(item?.userId) || 'Unknown User',
+            totalPoints: item?._sum?.pointsAwarded ?? 0 // Sum of points across ALL completed rounds
+        }));
+
+        // Access the count correctly from the rawTopJokers result (Index 2)
+        const topJokerPlayers = rawTopJokers.map(item => ({
+             userId: item?.userId,
+             name: userMap.get(item?.userId) || 'Unknown User',
+             // The count is directly under _count based on the groupBy query structure
+             successfulJokers: item?._count?.userId ?? 0
+        }));
+
+
+        // Assemble the final response payload
+        const responsePayload = {
+            roundId: round.roundId,
+            roundName: round.name,
+            roundStats: {
+                exactScoresCount: exactScoresCount,
+                successfulJokersCount: successfulJokersCount,
+                totalPredictions: allRoundPredictions.length,
+            },
+            topScorersThisRound: topScorersThisRound,
+            overallLeaders: overallLeaders,
+            topJokerPlayers: topJokerPlayers,
+        };
+
+        console.log(`[${new Date().toISOString()}] Sending final summary payload for Round ${roundId}.`);
+        res.status(200).json(responsePayload); // Send placeholder for now
+
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error fetching summary for Round ${roundId}:`, error);
+        next(error);
+    }
+});
+// --- END NEW ROUTE ---
 
 
 // GET /api/rounds/:roundId - Get details for a specific round, including fixtures (public info, but protected)
