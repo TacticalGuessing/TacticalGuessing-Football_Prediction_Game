@@ -24,6 +24,7 @@ export interface User {
     name: string;
     email: string;
     role: 'PLAYER' | 'ADMIN';
+    teamName?: string | null;
 }
 
 export interface AuthResponse {
@@ -436,6 +437,53 @@ export const generateRandomUserPredictions = async (token: string): Promise<{ me
 };
 // ========================================================
 
+// --- NEW Profile Function ---
+
+/**
+ * Sets or updates the logged-in user's team name.
+ * @param teamName The new team name (string). Sending an empty string "" should clear it.
+ * @param token User's authentication token.
+ * @returns Promise resolving to the updated User object (excluding passwordHash).
+ */
+export const setTeamName = async (teamName: string, token: string): Promise<User> => {
+    const url = '/users/profile/team-name'; // Matches backend route
+    console.log(`%c[api.ts] Calling setTeamName: ${url}`, 'color: darkgoldenrod;');
+
+    if (!token) throw new Error("Authentication token is missing.");
+    // Basic validation on the input string type, backend handles trimming/length
+    if (typeof teamName !== 'string') {
+        console.error('%c[setTeamName] Invalid teamName provided (must be a string):', 'color: red;', teamName);
+        throw new Error("Invalid Team Name format.");
+    }
+
+    try {
+        const response = await fetchWithAuth(url, {
+            method: 'POST',
+            body: JSON.stringify({ teamName: teamName }) // Send in expected { teamName: "..." } format
+        }, token);
+        console.log(`%c[setTeamName] fetchWithAuth successful`, 'color: darkgoldenrod;');
+
+        const updatedUserData = await response.json(); // Expect backend to return updated User object
+
+        // Validate response structure
+        if (!updatedUserData || typeof updatedUserData.userId !== 'number' || typeof updatedUserData.name !== 'string') {
+             console.error('%c[setTeamName] Invalid response format:', 'color: red;', updatedUserData);
+             throw new Error("Received invalid user data format from server after update.");
+         }
+
+        console.log(`%c[setTeamName] Success response:`, 'color: darkgoldenrod;', updatedUserData);
+        // Return the updated user data (which should match the User interface)
+        return updatedUserData as User;
+
+    } catch (error) {
+        console.error(`%c[setTeamName] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+        if (error instanceof Error) { throw error; } // Re-throw original error
+        else { throw new Error('An unknown error occurred while setting the team name.'); }
+    }
+};
+
+// --- END NEW Profile Function ---
+
 /**
  * Fetches a list of completed rounds (for standings dropdown).
  * Uses getRounds which maps response to camelCase.
@@ -444,6 +492,41 @@ export const getCompletedRounds = async (token: string): Promise<SimpleRound[]> 
     const completedRounds: Round[] = await getRounds(token, 'COMPLETED');
     return completedRounds.map(({ roundId, name }) => ({ roundId, name }));
 };
+
+// --- NEW: Get Latest Completed Round ---
+/**
+ * Fetches the ID and name of the most recently completed round.
+ * Returns null if no rounds are completed yet.
+ * @param token User's authentication token.
+ */
+export const getLatestCompletedRound = async (token: string): Promise<SimpleRound | null> => {
+    const url = '/rounds/latest-completed';
+    console.log(`%c[api.ts] Calling getLatestCompletedRound: ${url}`, 'color: orange;');
+    if (!token) throw new Error("Authentication token is missing.");
+    try {
+        const response = await fetchWithAuth(url, { method: 'GET' }, token);
+        // Check for 204 No Content specifically
+        if (response.status === 204) {
+            console.log(`%c[getLatestCompletedRound] No completed rounds found (204).`, 'color: orange;');
+            return null; // Return null explicitly
+        }
+        const data = await response.json(); // Expect { roundId, name }
+        if (!data || typeof data.roundId !== 'number') {
+             console.error('%c[getLatestCompletedRound] Invalid response format:', 'color: red;', data);
+             throw new Error("Received invalid data format for latest completed round.");
+         }
+        console.log(`%c[getLatestCompletedRound] Success response:`, 'color: orange;', data);
+        return data as SimpleRound;
+    } catch (error) {
+         console.error(`%c[getLatestCompletedRound] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+         // Don't re-throw, return null if error occurs (e.g., backend issue)
+         // Calling component should handle null state.
+         // if (error instanceof Error) { throw error; }
+         // else { throw new Error('An unknown error occurred fetching latest completed round.'); }
+         return null; // Return null on error
+    }
+};
+// --- END NEW FUNCTION ---
 
 /**
  * Fetches the standings for a specific completed round or overall standings.
@@ -940,6 +1023,8 @@ export const getRoundSummary = async (
          else { throw new Error('An unknown error occurred while fetching the round summary.'); }
     }
 };
+
+
 
 // --- END: Round Summary API Function ---
 

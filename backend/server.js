@@ -12,6 +12,7 @@ const fixturesRoutes = require('./routes/fixtures'); // <--- Add this line: Impo
 const standingsRoutes = require('./routes/standings');
 const fixtureRoutes = require('./routes/fixtures'); // Adjust path if needed
 const adminRoutes = require('./routes/admin');
+const usersRoutes = require('./routes/users');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -29,6 +30,7 @@ app.use('/api/fixtures', fixturesRoutes); // <--- Add this line: Mount fixtures 
 app.use('/api/standings', standingsRoutes);
 app.use('/api/fixtures', fixtureRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/users', usersRoutes);
 
 // Basic Database Connection Test Route (Optional - can remove if DB connects on start)
 app.get('/api/db-test', async (req, res, next) => {

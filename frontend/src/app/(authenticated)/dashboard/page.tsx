@@ -1,346 +1,275 @@
 // frontend/src/app/(authenticated)/dashboard/page.tsx
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link'; // Used for Admin and Standings links
+import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
+import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
 
-import { formatDateTime } from '@/utils/formatters';
-import { useAuth } from '@/context/AuthContext';
+// Import relevant API functions and types
 import {
-    getActiveRound,
-    savePredictions,
-    generateRandomUserPredictions,
-    ActiveRoundResponse,
-    FixtureWithPrediction,
-    PredictionPayload,
+    getStandings,
+    getLatestCompletedRound,
+    getRoundSummary,
+    StandingEntry,
+    SimpleRound,
+    RoundSummaryResponse
 } from '@/lib/api';
-
-interface PredictionInputState {
-    home: number | null;
-    away: number | null;
-}
+// Assuming you have these components or render inline
+// import StandingsTableSnippet from '@/components/Dashboard/StandingsTableSnippet';
+// import LatestSummaryHighlights from '@/components/Dashboard/LatestSummaryHighlights';
+// import MovementIndicator from '@/components/Standings/MovementIndicator';
 
 export default function DashboardPage() {
-    const router = useRouter();
-    // Get user info including role from Auth context
-    const { user, token, isLoading: isAuthLoading, logout } = useAuth();
+    const { user, token, isLoading: isAuthLoading } = useAuth();
 
-    // --- State Variables ---
-    const [activeRoundData, setActiveRoundData] = useState<ActiveRoundResponse | null>(null);
-    const [isRoundLoading, setIsRoundLoading] = useState(true);
-    const [roundError, setRoundError] = useState<string | null>(null);
-    const [predictions, setPredictions] = useState<Record<number, PredictionInputState>>({});
-    const [jokerFixtureId, setJokerFixtureId] = useState<number | null>(null);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [submitError, setSubmitError] = useState<string | null>(null);
-    const [submitSuccessMessage, setSubmitSuccessMessage] = useState<string | null>(null);
-    const [isGeneratingRandom, setIsGeneratingRandom] = useState(false);
-    const [isDeadlinePassed, setIsDeadlinePassed] = useState(false);
-    const isActionRunning = isSubmitting || isGeneratingRandom;
+    // State for dashboard data
+    const [overallStandings, setOverallStandings] = useState<StandingEntry[]>([]);
+    const [latestSummary, setLatestSummary] = useState<RoundSummaryResponse | null>(null);
+    const [latestRoundInfo, setLatestRoundInfo] = useState<SimpleRound | null>(null); // Store basic info too
 
-    // --- Effects ---
+    // Loading and Error State
+    const [isLoadingData, setIsLoadingData] = useState(true);
+    const [pageError, setPageError] = useState<string | null>(null);
 
-    // Effect for Deadline Check
-    useEffect(() => {
-        let timerId: NodeJS.Timeout | null = null;
-        if (activeRoundData?.deadline) {
-            const checkDeadline = () => {
-                try {
-                    const deadlineDate = new Date(activeRoundData.deadline);
-                    const now = new Date();
-                    const passed = now >= deadlineDate;
-                    setIsDeadlinePassed(passed);
-                    return passed;
-                } catch (e) {
-                    console.error("Error parsing deadline date:", activeRoundData.deadline, e);
-                    setIsDeadlinePassed(false); return false;
-                }
-            };
-            const passed = checkDeadline();
-            if (!passed) {
-                timerId = setInterval(() => {
-                    const stillPassed = checkDeadline();
-                    if (stillPassed && timerId) clearInterval(timerId);
-                }, 30000);
-            }
-        } else {
-            setIsDeadlinePassed(false);
-        }
-        return () => { if (timerId) clearInterval(timerId); };
-    }, [activeRoundData?.deadline]);
-
-    // Effect for Fetching Active Round Data
-    const fetchRoundData = useCallback(async () => {
+    // Fetch all necessary data for the dashboard
+    const fetchDashboardData = useCallback(async () => {
         if (!token) {
-            setIsRoundLoading(false); setActiveRoundData(null); setRoundError(null); setJokerFixtureId(null);
-            return;
-        }
-        setIsRoundLoading(true); setRoundError(null); setActiveRoundData(null); setSubmitError(null); setSubmitSuccessMessage(null); setJokerFixtureId(null);
-        try {
-            const data = await getActiveRound(token);
-            setActiveRoundData(data);
-        } catch (error: unknown) {
-            console.error("Round Fetch Effect: Failed to fetch active round:", error);
-            const message = (error instanceof Error) ? error.message : "Could not load the active prediction round.";
-            setRoundError(message); setActiveRoundData(null);
-        } finally {
-            setIsRoundLoading(false);
-        }
-    }, [token]);
-
-    // Run fetchRoundData when token becomes available or changes
-    useEffect(() => {
-        if (!isAuthLoading) fetchRoundData();
-    }, [isAuthLoading, fetchRoundData]);
-
-    // Effect: Initialize prediction input state AND joker state AFTER round data is loaded/updated
-    useEffect(() => {
-        if (activeRoundData?.fixtures) {
-            const initialPredictions: Record<number, PredictionInputState> = {};
-            let initialJokerId: number | null = null;
-            activeRoundData.fixtures.forEach((fixture: FixtureWithPrediction) => {
-                initialPredictions[fixture.fixtureId] = { home: fixture.predictedHomeGoals ?? null, away: fixture.predictedAwayGoals ?? null };
-                if (fixture.isJoker === true) initialJokerId = fixture.fixtureId;
-            });
-            setPredictions(initialPredictions); setJokerFixtureId(initialJokerId);
-            setSubmitError(null); setSubmitSuccessMessage(null);
-        } else {
-            setPredictions({}); setJokerFixtureId(null);
-        }
-    }, [activeRoundData]);
-
-    // --- Event Handlers ---
-
-    const handleLogout = () => {
-        console.log("Logging out user...");
-        logout();
-        router.push('/login');
-    };
-
-    const handlePredictionChange = (fixtureId: number, scoreType: 'home' | 'away', value: string) => {
-        const score = value === '' ? null : parseInt(value, 10);
-        const finalScore = (score === null || isNaN(score) || score < 0) ? null : score;
-        setSubmitError(null); setSubmitSuccessMessage(null);
-        setPredictions(prevPredictions => ({
-            ...prevPredictions,
-            [fixtureId]: { ...(prevPredictions[fixtureId] ?? { home: null, away: null }), [scoreType]: finalScore }
-        }));
-    };
-
-    const handleSetJoker = (fixtureId: number) => {
-        if (isDeadlinePassed || isActionRunning) return;
-        setSubmitError(null); setSubmitSuccessMessage(null);
-        setJokerFixtureId(prevJokerId => prevJokerId === fixtureId ? null : fixtureId);
-    };
-
-    // Handler for Submitting Predictions
-    const handleSubmitPredictions = async () => {
-        // Role check already handled by UI hiding buttons, backend will provide final check
-        if (!activeRoundData?.fixtures?.length || isDeadlinePassed || !token || isSubmitting) return;
-
-        setIsSubmitting(true); setSubmitError(null); setSubmitSuccessMessage(null);
-        const activeFixtureIds = new Set(activeRoundData.fixtures.map(f => f.fixtureId));
-
-        // Define the non-null structure produced by the map
-        type NonNullMappedPrediction = {
-            fixtureId: number;
-            predictedHomeGoals: number; // number here
-            predictedAwayGoals: number; // number here
-            isJoker: boolean;
+             setIsLoadingData(false); // No token, stop loading
+             setPageError("Authentication required to load dashboard.");
+             return;
         };
 
-        // Map predictions, potentially returning null
-        const mappedOrNull: (NonNullMappedPrediction | null)[] = Object.entries(predictions)
-            .map(([fixtureIdStr, scores]) => {
-                const fixtureId = parseInt(fixtureIdStr, 10);
-                // Only create an object if scores are valid numbers
-                if (activeFixtureIds.has(fixtureId) &&
-                    typeof scores.home === 'number' && scores.home >= 0 &&
-                    typeof scores.away === 'number' && scores.away >= 0)
-                {
-                    // Return the object matching NonNullMappedPrediction
-                    return {
-                        fixtureId: fixtureId,
-                        predictedHomeGoals: scores.home,
-                        predictedAwayGoals: scores.away,
-                        isJoker: fixtureId === jokerFixtureId
-                    };
+        setIsLoadingData(true);
+        setPageError(null);
+        // Reset data on refetch? Maybe not for smoother updates.
+        // setOverallStandings([]);
+        // setLatestSummary(null);
+        // setLatestRoundInfo(null);
+
+        console.log(`%c[Dashboard] Fetching data...`, 'color: blue');
+
+        try {
+            // Use Promise.allSettled to fetch crucial data even if secondary fails
+            const results = await Promise.allSettled([
+                getStandings(token), // Fetch overall standings (index 0)
+                getLatestCompletedRound(token) // Fetch latest completed round info (index 1)
+            ]);
+
+            let standingsError = null;
+            let latestRoundError = null;
+            let latestRound: SimpleRound | null = null;
+
+            // Process Standings Result
+            if (results[0].status === 'fulfilled') {
+                 // Limit to top 5 for snippet display
+                setOverallStandings(results[0].value.slice(0, 5));
+                 console.log(`%c[Dashboard] Standings fetched.`, 'color: green;');
+            } else {
+                console.error("[Dashboard] Error fetching standings:", results[0].reason);
+                standingsError = results[0].reason instanceof Error ? results[0].reason.message : "Could not load standings.";
+            }
+
+            // Process Latest Completed Round Result
+            if (results[1].status === 'fulfilled') {
+                latestRound = results[1].value; // This is { roundId, name } or null
+                setLatestRoundInfo(latestRound);
+                 console.log(`%c[Dashboard] Latest completed round fetched:`, 'color: green;', latestRound);
+            } else {
+                 console.error("[Dashboard] Error fetching latest completed round:", results[1].reason);
+                 latestRoundError = results[1].reason instanceof Error ? results[1].reason.message : "Could not load latest round info.";
+            }
+
+            // If we found a latest completed round, fetch its summary
+            let summaryError = null;
+            if (latestRound?.roundId) {
+                try {
+                    console.log(`%c[Dashboard] Fetching summary for round ${latestRound.roundId}...`, 'color: teal;');
+                    const summary = await getRoundSummary(latestRound.roundId, token);
+                    setLatestSummary(summary);
+                     console.log(`%c[Dashboard] Summary fetched.`, 'color: green;');
+                } catch (summaryErr: unknown) {
+                    console.error(`[Dashboard] Error fetching summary for round ${latestRound.roundId}:`, summaryErr);
+                    summaryError = summaryErr instanceof Error ? summaryErr.message : "Could not load latest round summary.";
+                    setLatestSummary(null); // Ensure summary is null on error
                 }
-                return null; // Return null for invalid/inactive ones
-            });
+            } else {
+                 console.log(`%c[Dashboard] No latest completed round found, skipping summary fetch.`, 'color: orange;');
+                 setLatestSummary(null); // No round means no summary
+            }
 
-        // Filter out the nulls using a type guard asserting the non-null type
-        // The result of this filter IS assignable to PredictionPayload[] because
-        // NonNullMappedPrediction is assignable to PredictionPayload.
-        const predictionsToSubmit: PredictionPayload[] = mappedOrNull.filter(
-            // Type guard asserts that non-null items match NonNullMappedPrediction
-            (p): p is NonNullMappedPrediction => p !== null
-        );
+            // Combine errors if necessary
+            const combinedError = [standingsError, latestRoundError, summaryError].filter(Boolean).join('; ');
+            if (combinedError) {
+                 setPageError(combinedError);
+                 toast.error("Some dashboard data failed to load.", { duration: 4000 });
+            }
 
 
-        try {
-            await savePredictions(predictionsToSubmit, token);
-            setSubmitSuccessMessage("Predictions saved successfully!");
-            toast.success("Predictions saved!");
-        } catch (error: unknown) {
-            console.error("Failed to submit predictions:", error);
-            const errorMessage = (error instanceof Error) ? error.message : "An error occurred while saving predictions.";
-            setSubmitError(errorMessage);
-            toast.error(`Save failed: ${errorMessage}`);
+        } catch (generalError) {
+             // Catch unexpected errors during Promise.allSettled itself (unlikely)
+             console.error("[Dashboard] Unexpected error fetching data:", generalError);
+             setPageError("An unexpected error occurred loading the dashboard.");
+             toast.error("Failed to load dashboard data.");
         } finally {
-            setIsSubmitting(false);
+            setIsLoadingData(false);
         }
-    };
+    }, [token]); // Depends only on token
 
-    const handleGenerateRandom = async () => {
-        // Role check already handled by UI hiding buttons, backend will provide final check
-        if (!activeRoundData?.fixtures?.length || isDeadlinePassed || !token || isActionRunning) return;
-        const confirmRandom = window.confirm("This will overwrite your current predictions with random scores (0-4) and clear any selected Joker. Are you sure?");
-        if (!confirmRandom) return;
-        setIsGeneratingRandom(true); setSubmitError(null); setSubmitSuccessMessage(null); setJokerFixtureId(null);
-        try {
-            const result = await generateRandomUserPredictions(token);
-            toast.success(result.message || `Generated random predictions for ${result.count} fixtures.`);
-            await fetchRoundData(); // Refresh data
-        } catch (error: unknown) {
-             console.error("Failed to generate random predictions:", error);
-             const errorMessage = (error instanceof Error) ? error.message : "An error occurred while generating predictions.";
-             toast.error(`Failed to generate random predictions: ${errorMessage}`);
-             await fetchRoundData(); // Refetch even on error
-        } finally {
-            setIsGeneratingRandom(false);
+    // Effect to fetch data when authenticated
+    useEffect(() => {
+        if (!isAuthLoading && token) {
+            fetchDashboardData();
+        } else if (!isAuthLoading && !token) {
+            // Handle case where user logs out - clear data? Or rely on redirect?
+            setIsLoadingData(false);
+            setPageError("Please log in."); // Show message if stuck on page
         }
-    };
+    }, [isAuthLoading, token, fetchDashboardData]);
+
 
     // --- Render Logic ---
 
-    if (isAuthLoading) {
-        return ( <div className="flex justify-center items-center min-h-screen bg-gray-100"><p className="text-lg font-semibold text-gray-600">Authenticating...</p></div> );
+    if (isAuthLoading || isLoadingData) {
+        return <div className="p-4 md:p-6 text-center">Loading Dashboard...</div>;
     }
-    if (!user || !token) {
-         // AuthProvider should redirect, this is a fallback message
-         return ( <div className="flex justify-center items-center min-h-screen bg-gray-100"><p className="text-red-600">User not authenticated. Redirecting...</p></div> );
-    }
+
+     if (!user || !token) { // Check user as well
+          // AuthProvider should redirect, this is a fallback message
+          return ( <div className="p-4 md:p-6 text-center text-red-600">User not authenticated. Redirecting...</div> );
+     }
+
 
     return (
-        <div className="min-h-screen bg-gray-100 p-4 md:p-8">
-            <div className="max-w-5xl mx-auto bg-white p-4 sm:p-6 rounded-lg shadow-lg">
+        <div className="container mx-auto p-4 md:p-6 space-y-8">
+            {/* Welcome Header */}
+            <div>
+                 <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
+                     Welcome back, <span className="text-indigo-600">{user.name}!</span>
+                 </h1>
+                 {/* Optional: Add a brief intro or date */}
+                 <p className="text-gray-600">Here&apos;s the latest from the Prediction Game.</p>
+            </div>
 
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 pb-4 border-b border-gray-200">
-                    <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2 sm:mb-0">
-                        Welcome, {user.name}! {/* Display username */}
-                    </h1>
-                    <button type="button" onClick={handleLogout} className="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 transition duration-150 ease-in-out w-full sm:w-auto">
-                        Logout
-                    </button>
+
+             {/* Display combined errors if any */}
+             {pageError && (
+                 <div className="p-4 text-center text-red-600 bg-red-100 rounded border border-red-300">
+                     <p>Could not load all dashboard data: {pageError}</p>
+                 </div>
+             )}
+
+
+            {/* Main Content Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+                                {/* Overall Standings Snippet (Left Column / Spans 2 on large screens) */}
+                                <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-lg shadow border border-gray-200">
+                     <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-semibold text-gray-700">Overall Standings (Top 5)</h2>
+                         <Link href="/standings" className="text-sm text-blue-600 hover:underline font-medium">View Full Standings →</Link>
+                     </div>
+
+                     {/* Standings Table Snippet */}
+                     <div className="overflow-x-auto">
+                        {overallStandings.length > 0 ? (
+                            <table className="min-w-full divide-y divide-gray-200">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        {/* === MODIFIED: Added Headers === */}
+                                        <th scope="col" className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">Pos</th>
+                                        {/* +/- Column maybe omitted for snippet simplicity? Your choice. Let's omit for now. */}
+                                        {/* <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-10">+/-</th> */}
+                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">Pld</th>
+                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Outcome</th>
+                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Exact</th>
+                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Acc %</th>
+                                        <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Points</th>
+                                        {/* === END MODIFIED Headers === */}
+                                    </tr>
+                                </thead>
+                                <tbody className="bg-white divide-y divide-gray-200">
+                                    {overallStandings.map((entry) => (
+                                        <tr key={entry.userId}>
+                                            {/* === MODIFIED: Added Cells === */}
+                                            <td className="px-3 py-2 whitespace-nowrap text-sm text-center">{entry.rank}</td>
+                                            {/* Movement cell omitted */}
+                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{entry.name}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.totalPredictions}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.correctOutcomes}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.exactScores}</td>
+                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.accuracy === null ? '-' : `${entry.accuracy.toFixed(1)}%`}</td>
+                                            <td className="px-3 py-2 whitespace-nowrap text-sm font-bold text-indigo-600 text-right">{entry.points}</td>
+                                            {/* === END MODIFIED Cells === */}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                         ) : (
+                             <p className="text-sm text-gray-500 italic py-4 text-center">Standings data is currently unavailable.</p>
+                         )}
+                     </div>
                 </div>
 
-                {/* Active Prediction Round Area */}
-                <div className="mt-6">
-                    <h2 className="text-xl md:text-2xl font-semibold text-gray-700 mb-4">Active Prediction Round</h2>
-                    {isRoundLoading && <div className="text-center p-4"><p className="text-lg font-semibold text-gray-600">Loading active round...</p></div>}
-                    {roundError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert"><strong className="font-bold">Error! </strong><span className="block sm:inline">{roundError}</span></div>}
-                    {!isRoundLoading && !roundError && !activeRoundData && <div className="bg-yellow-100 border border-yellow-400 text-yellow-800 px-4 py-3 rounded mb-4" role="alert"><p className="font-medium">No active prediction round found.</p></div>}
+                {/* Latest Round Summary Snippet (Right Column / Spans 1) */}
+                <div className="bg-white p-4 md:p-6 rounded-lg shadow border border-gray-200">
+                     <h2 className="text-xl font-semibold text-gray-700 mb-4">Latest Round Summary</h2>
 
-                    {/* Display round details and potentially the form/message */}
-                    {!isRoundLoading && !roundError && activeRoundData && (
-                        <div className="border border-gray-200 rounded-lg shadow-sm p-4 md:p-6 bg-gradient-to-r from-blue-50 to-indigo-50">
-                            {/* Round Title and Deadline (Shown to all) */}
-                            <div className="mb-5">
-                                <h3 className="text-xl lg:text-2xl font-bold text-indigo-800 mb-1">{activeRoundData.name}</h3>
-                                <p className={`text-sm ${isDeadlinePassed ? 'text-red-700 font-semibold' : 'text-gray-600'}`}>
-                                    Prediction Deadline: <strong className={isDeadlinePassed ? '' : 'text-red-600'}>{formatDateTime(activeRoundData.deadline)}</strong>
-                                    {isDeadlinePassed ? <span className="italic text-xs block sm:inline sm:ml-2">(Deadline Passed - Predictions Locked)</span> : <span className="italic text-xs block sm:inline sm:ml-2">(Predictions lock at this time)</span>}
-                                </p>
-                            </div>
-
-                            {/* --- Conditional Section for Players vs Admins --- */}
-                            {user?.role === 'PLAYER' ? (
-                                <> {/* Fragment for Player content */}
-                                    <h4 className="text-lg font-semibold text-gray-700 mb-3 border-t pt-4">Enter Your Predictions:</h4>
-                                    {activeRoundData.fixtures.length > 0 ? (
-                                        <ul className="space-y-4">
-                                            {/* Fixture Row Mapping */}
-                                            {activeRoundData.fixtures.map((fixture) => {
-                                                const currentPrediction = predictions[fixture.fixtureId] ?? { home: null, away: null };
-                                                const isCurrentJoker = fixture.fixtureId === jokerFixtureId;
-                                                return (
-                                                    <li key={fixture.fixtureId} className={`p-3 bg-white rounded-md border ${isCurrentJoker ? 'border-yellow-400 ring-2 ring-yellow-300' : 'border-gray-200'} shadow-sm grid grid-cols-1 md:grid-cols-[1fr_auto_auto] gap-3 md:gap-4 items-center`}>
-                                                        {/* Info */}
-                                                        <div className="flex-grow text-sm md:text-base">
-                                                            <span className="font-semibold text-gray-800">{fixture.homeTeam}</span> <span className="mx-2 text-gray-400">vs</span> <span className="font-semibold text-gray-800">{fixture.awayTeam}</span>
-                                                            <span className="block md:inline text-xs text-gray-500 md:ml-3">({formatDateTime(fixture.matchTime)})</span>
-                                                        </div>
-                                                        {/* Inputs */}
-                                                        <div className="flex items-center gap-2 w-full md:w-auto justify-start md:justify-end">
-                                                            <input type="number" min="0" placeholder="H" aria-label={`Home score prediction for ${fixture.homeTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isActionRunning} value={currentPrediction.home ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'home', e.target.value)} />
-                                                            <span className="text-gray-400">-</span>
-                                                            <input type="number" min="0" placeholder="A" aria-label={`Away score prediction for ${fixture.awayTeam}`} className={`w-12 px-2 py-1 border border-gray-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 ${isDeadlinePassed ? 'bg-gray-200 cursor-not-allowed' : ''}`} disabled={isDeadlinePassed || isActionRunning} value={currentPrediction.away ?? ''} onChange={(e) => handlePredictionChange(fixture.fixtureId, 'away', e.target.value)} />
-                                                        </div>
-                                                        {/* Joker */}
-                                                        <div className="w-full md:w-auto flex justify-end">
-                                                            <button type="button" onClick={() => handleSetJoker(fixture.fixtureId)} disabled={isDeadlinePassed || isActionRunning} title={isCurrentJoker ? "Clear Joker for this match" : "Set this match as Joker (double points if correct)"} className={`px-3 py-1 rounded text-xs font-medium transition duration-150 ease-in-out focus:outline-none focus:ring-2 focus:ring-opacity-50 ${ isCurrentJoker ? 'bg-yellow-400 hover:bg-yellow-500 text-yellow-900 focus:ring-yellow-400' : 'bg-gray-200 hover:bg-gray-300 text-gray-700 focus:ring-gray-400' } ${isDeadlinePassed || isActionRunning ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                                                                {isCurrentJoker ? '★ Joker Active' : 'Set Joker'}
-                                                            </button>
-                                                        </div>
-                                                    </li>
-                                                );
-                                            })}
-                                        </ul>
-                                    ) : (<p className="text-gray-500 italic px-3">No fixtures have been added to this round yet.</p>)}
-
-                                    {/* Submission button area (only shown if fixtures exist) */}
-                                    {activeRoundData.fixtures.length > 0 && (
-                                        <div className="mt-6 border-t pt-4 space-y-3">
-                                            {/* Messages */}
-                                            {submitSuccessMessage && (<div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative" role="alert"><span className="block sm:inline">{submitSuccessMessage}</span></div>)}
-                                            {submitError && (<div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative" role="alert"><strong className="font-bold">Error! </strong><span className="block sm:inline">{submitError}</span></div>)}
-                                            {/* Buttons */}
-                                            <div className="flex flex-col sm:flex-row justify-end items-center gap-3">
-                                                <button type="button" onClick={handleGenerateRandom} className={`bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-opacity-50 transition duration-150 ease-in-out text-sm ${isActionRunning || isDeadlinePassed ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={isActionRunning || isDeadlinePassed} title="Fill all predictions with random scores (0-4)">
-                                                    {isGeneratingRandom ? 'Generating...' : 'Generate Random'}
-                                                </button>
-                                                <button type="button" onClick={handleSubmitPredictions} className={`bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-6 rounded focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50 transition duration-150 ease-in-out ${isActionRunning || isDeadlinePassed ? 'opacity-50 cursor-not-allowed' : ''}`} disabled={isActionRunning || isDeadlinePassed}>
-                                                    {isSubmitting ? 'Saving...' : (isDeadlinePassed ? 'Deadline Passed' : 'Save Predictions')}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </>
-                            ) : (
-                                // Message for Admins
-                                <div className="text-center text-gray-600 italic mt-6 border-t pt-4">
-                                    <p>Admins manage rounds and do not submit predictions.</p>
-                                </div>
-                            )}
-                            {/* --- End Conditional Section --- */}
-
+                     {latestSummary && latestRoundInfo ? (
+                        <div className="space-y-3">
+                             <h3 className="font-semibold text-indigo-700">{latestSummary.roundName}</h3>
+                             <ul className="space-y-1 text-sm">
+                                 <li>
+                                    <span className="text-gray-600">Exact Scores:</span>
+                                    <span className="ml-2 font-bold text-green-700">{latestSummary.roundStats.exactScoresCount}</span>
+                                </li>
+                                 <li>
+                                    <span className="text-gray-600">Successful Jokers:</span>
+                                    <span className="ml-2 font-bold text-yellow-700">{latestSummary.roundStats.successfulJokersCount} ★</span>
+                                </li>
+                                {latestSummary.topScorersThisRound.length > 0 && (
+                                     <li>
+                                        <span className="text-gray-600">Top Scorer:</span>
+                                         <span className="ml-2 font-medium text-gray-800">{latestSummary.topScorersThisRound[0].name} ({latestSummary.topScorersThisRound[0].points} pts)</span>
+                                     </li>
+                                )}
+                             </ul>
+                             <div className="pt-2">
+                                <Link href={`/rounds/${latestSummary.roundId}/summary`} className="text-sm text-blue-600 hover:underline font-medium">View Full Summary →</Link>
+                             </div>
                         </div>
-                    )}
-                </div> {/* End Active Prediction Round Area */}
+                     ) : latestRoundInfo === null && !isLoadingData ? ( // Explicitly check if fetch completed and found null
+                        <p className="text-sm text-gray-500 italic">No rounds have been completed yet.</p>
+                     ) : !isLoadingData && pageError?.includes("summary") ? ( // Show summary-specific error if relevant
+                         <p className="text-sm text-red-500 italic">Could not load latest summary data.</p>
+                     ) : (
+                         !isLoadingData && <p className="text-sm text-gray-500 italic">Latest summary is unavailable.</p> // Generic fallback
+                     )}
+                 </div>
 
-                 {/* Admin Area Link (Shown only to Admins) */}
-                {user.role === 'ADMIN' && (
-                    <div className="mt-8 p-4 border border-green-300 rounded bg-green-50">
-                        <h3 className="font-bold text-green-800 mb-1">Admin Area</h3>
-                        <Link href="/admin" className="text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded text-sm font-medium">
-                            Go to Admin Panel →
-                        </Link>
-                    </div>
-                )}
+             </div> {/* End Grid */}
 
-                {/* League Standings Link (Shown to all) */}
-                <div className="mt-4 p-4 border border-gray-200 rounded bg-gray-50">
-                    <h3 className="font-semibold text-gray-800 mb-1">League Standings</h3>
-                    <Link href="/standings" className="text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded text-sm">
-                        View Completed Round Standings →
-                    </Link>
-                </div>
 
-            </div> {/* End max-w container */}
-        </div> // End main div
+             {/* Bottom Links (Admin / Standings) */}
+             <div className="mt-8 pt-6 border-t border-gray-200 space-y-4">
+                  {/* Admin Area Link (Conditional) */}
+                  {user.role === 'ADMIN' && (
+                      <div className="p-4 border border-green-300 rounded bg-green-50">
+                          <h3 className="font-bold text-green-800 mb-1">Admin Area</h3>
+                          <Link href="/admin" className="text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded text-sm font-medium">
+                              Go to Admin Panel →
+                          </Link>
+                      </div>
+                  )}
+                  {/* Navigation Links */}
+                  {/* Example: Could add quick links here too if desired */}
+                  {/* <div className="flex gap-4">
+                        <Link href="/predictions" className="text-indigo-600 hover:underline">Make Predictions</Link>
+                        <Link href="/standings" className="text-indigo-600 hover:underline">View Standings</Link>
+                  </div> */}
+            </div>
+
+        </div> // End Container
     );
 }

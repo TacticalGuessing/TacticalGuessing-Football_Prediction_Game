@@ -1,4 +1,4 @@
-// backend/routes/standings.js  <- THIS IS PURE JAVASCRIPT
+// backend/routes/standings.js
 const express = require('express');
 const db = require('../db'); // Assuming db.js exports query function or pool
 const { protect } = require('../middleware/authMiddleware');
@@ -11,34 +11,22 @@ const router = express.Router();
 async function determinePreviousRoundId(targetRoundId, dbPoolOrClient) {
     let completedRoundsRes;
     try {
-        // Use round_id for rounds table
         completedRoundsRes = await dbPoolOrClient.query(
             "SELECT round_id FROM rounds WHERE status = 'COMPLETED' ORDER BY deadline DESC, round_id DESC"
         );
     } catch (error) {
         console.error("[determinePreviousRoundId] Error fetching completed rounds:", error);
-        throw new Error(`Failed to retrieve round history for movement calculation. DB Error: ${error.message}`);
+        throw new Error(`Failed to retrieve round history. DB Error: ${error.message}`);
     }
     const completedRounds = completedRoundsRes.rows;
     if (!completedRounds || completedRounds.length === 0) return null;
 
     if (targetRoundId) {
         const numericTargetRoundId = Number(targetRoundId);
-        const targetIndex = completedRounds.findIndex(r => r.round_id === numericTargetRoundId); // Compare using round_id
-
-        if (targetIndex !== -1 && targetIndex < completedRounds.length - 1) {
-             const previousRoundId = completedRounds[targetIndex + 1].round_id; // Get round_id
-             return previousRoundId;
-        } else {
-             return null;
-        }
+        const targetIndex = completedRounds.findIndex(r => r.round_id === numericTargetRoundId);
+        return (targetIndex !== -1 && targetIndex < completedRounds.length - 1) ? completedRounds[targetIndex + 1].round_id : null;
     } else {
-        if (completedRounds.length >= 2) {
-            const previousRoundId = completedRounds[1].round_id; // Get round_id
-            return previousRoundId;
-        } else {
-            return null;
-        }
+        return (completedRounds.length >= 2) ? completedRounds[1].round_id : null;
     }
 }
 // =======================================================================
@@ -47,19 +35,18 @@ async function determinePreviousRoundId(targetRoundId, dbPoolOrClient) {
 // ===== HELPER FUNCTION: Fetch Ranks for a Specific Round ========
 // =======================================================================
 async function fetchRanksForRound(roundId, dbPoolOrClient) {
-    // Uses users.user_id, users.name, predictions.user_id, predictions.round_id, predictions.points_awarded
+    // *** Include team_name in this query if needed for tie-breaking, otherwise not strictly necessary here ***
+    // For now, keep it simple, assuming rank only depends on points and name for tie-breaking
     const query = `
         WITH PlayerPredictions AS (
             SELECT
-                u.user_id AS user_id, -- Use user_id from users table
-                u.name,
+                u.user_id,
+                u.name, -- Keep original name for tie-breaking if needed
                 COALESCE(SUM(p.points_awarded), 0) AS total_points
-            FROM
-                users u
-            LEFT JOIN predictions p ON u.user_id = p.user_id AND p.round_id = $1 -- Join using user_id and round_id
+            FROM users u
+            LEFT JOIN predictions p ON u.user_id = p.user_id AND p.round_id = $1
             WHERE u.role = 'PLAYER'
-            GROUP BY
-                u.user_id, u.name -- Group by user_id
+            GROUP BY u.user_id, u.name
         )
         SELECT
             user_id,
@@ -70,12 +57,12 @@ async function fetchRanksForRound(roundId, dbPoolOrClient) {
         const result = await dbPoolOrClient.query(query, [roundId]);
         const rankMap = new Map();
         result.rows.forEach(row => {
-            rankMap.set(row.user_id, parseInt(row.rank, 10)); // Key the map with user_id
+            rankMap.set(row.user_id, parseInt(row.rank, 10));
         });
         return rankMap;
     } catch (error) {
         console.error(`[fetchRanksForRound] Error fetching ranks for round ${roundId}:`, error);
-        return new Map();
+        return new Map(); // Return empty map on error
     }
 }
 // ================== END HELPER FUNCTION ================================
@@ -85,7 +72,7 @@ async function fetchRanksForRound(roundId, dbPoolOrClient) {
  * @route   GET /api/standings
  * @desc    Get ranked user standings with stats and movement, either overall or for a specific completed round
  * @access  Private (Logged-in users)
- * @query   roundId (optional) - The ID of the round (should be round_id).
+ * @query   roundId (optional) - The ID of the round.
  */
 router.get('/', protect, async (req, res, next) => {
     const { roundId: requestedRoundIdStr } = req.query;
@@ -94,38 +81,34 @@ router.get('/', protect, async (req, res, next) => {
     let previousRoundId = null;
 
     if (requestedRoundIdStr && isNaN(requestedRoundId)) {
-        return res.status(400).json({ message: 'Query parameter roundId, if provided, must be an integer.' });
+        return res.status(400).json({ message: 'Query parameter roundId must be an integer.' });
     }
 
     try {
-        // Determine previous round ID (using rounds.round_id)
+        // Determine previous round ID
         previousRoundId = await determinePreviousRoundId(requestedRoundId, db);
-        console.log(`[Standings API Backend] Determined previousRoundId: ${previousRoundId} for requested: ${requestedRoundId}`); // DEBUG LOG
+        console.log(`[Standings API] PrevRoundId: ${previousRoundId} for requested: ${requestedRoundId}`);
 
-        // Validate specific round request (using rounds.round_id)
+        // Validate specific round request
         if (!isOverall) {
             const roundCheck = await db.query('SELECT status FROM rounds WHERE round_id = $1', [requestedRoundId]);
             if (roundCheck.rows.length === 0) return res.status(404).json({ message: 'Round not found.' });
-            const roundStatus = roundCheck.rows[0].status;
-            if (roundStatus !== 'COMPLETED') {
-                return res.status(400).json({ message: `Standings are only available for specific rounds with status 'COMPLETED'. Status of round ${requestedRoundId} is '${roundStatus}'.` });
+            if (roundCheck.rows[0].status !== 'COMPLETED') {
+                 return res.status(400).json({ message: `Standings only available for COMPLETED rounds.` });
             }
         }
 
-        // Fetch Previous Ranks (using users.user_id)
+        // Fetch Previous Ranks
         let previousRanksMap = new Map();
         if (previousRoundId) {
-            console.log(`[Standings API Backend] Fetching previous ranks for round: ${previousRoundId}`); // DEBUG LOG
+            console.log(`[Standings API] Fetching prev ranks for round: ${previousRoundId}`);
             previousRanksMap = await fetchRanksForRound(previousRoundId, db);
-            console.log(`[Standings API Backend] Fetched ${previousRanksMap.size} previous ranks.`); // DEBUG LOG
-        } else {
-             console.log(`[Standings API Backend] No previous round ID, skipping previous rank fetch.`); // DEBUG LOG
+            console.log(`[Standings API] Fetched ${previousRanksMap.size} prev ranks.`);
         }
 
-        // Define Main Standings Query
+        // --- Main Standings Query ---
         const queryParams = [];
         let filterClause = '';
-
         if (isOverall) {
             filterClause = `r.status = 'COMPLETED'`;
         } else {
@@ -133,15 +116,12 @@ router.get('/', protect, async (req, res, next) => {
             queryParams.push(requestedRoundId);
         }
 
-        // Main Query - Uses confirmed column names
+        // *** MODIFIED QUERY: Add team_name from users table ***
         const mainStandingsQuery = `
             WITH RelevantPredictions AS (
-                SELECT
-                    p.user_id,
-                    p.points_awarded,
-                    p.round_id
+                SELECT p.user_id, p.points_awarded, p.round_id
                 FROM predictions p
-                ${isOverall ? 'JOIN rounds r ON p.round_id = r.round_id' : ''} -- Join using round_id
+                ${isOverall ? 'JOIN rounds r ON p.round_id = r.round_id' : ''}
                 WHERE ${filterClause}
             ),
             UserStats AS (
@@ -150,76 +130,74 @@ router.get('/', protect, async (req, res, next) => {
                     COUNT(*) AS totalPredictions,
                     COUNT(*) FILTER (WHERE rp.points_awarded >= 1) AS correctOutcomes,
                     COUNT(*) FILTER (WHERE rp.points_awarded = 3) AS exactScores,
-                    SUM(rp.points_awarded) AS totalPoints
+                    SUM(COALESCE(rp.points_awarded, 0)) AS totalPoints -- Handle potential nulls before sum
                 FROM RelevantPredictions rp
                 GROUP BY rp.user_id
             ),
             RankedUsers AS (
                  SELECT
-                    u.user_id AS user_id, -- Select users.user_id
-                    u.name,
+                    u.user_id,
+                    u.name, -- Keep original name
+                    u.team_name, -- <<< ADD team_name selection
                     COALESCE(us.totalPredictions, 0) AS totalPredictions,
                     COALESCE(us.correctOutcomes, 0) AS correctOutcomes,
                     COALESCE(us.exactScores, 0) AS exactScores,
                     COALESCE(us.totalPoints, 0) AS points,
+                    -- Rank based on points, use original name for tie-breaking
                     RANK() OVER (ORDER BY COALESCE(us.totalPoints, 0) DESC, u.name ASC) AS rank
-                FROM
-                    users u
-                LEFT JOIN UserStats us ON u.user_id = us.user_id -- Join UserStats using user_id
-                WHERE u.role = 'PLAYER'
+                FROM users u
+                LEFT JOIN UserStats us ON u.user_id = us.user_id
+                WHERE u.role = 'PLAYER' -- Ensure only players are ranked
             )
             SELECT * FROM RankedUsers ORDER BY rank;
         `;
+        // --- END MODIFIED QUERY ---
 
-        // --- Execute the New Main Query ---
-        console.log(`[Standings API Backend] Executing main query for ${isOverall ? 'Overall' : `Round ${requestedRoundId}`}`); // DEBUG LOG
+        console.log(`[Standings API] Executing main query for ${isOverall ? 'Overall' : `Round ${requestedRoundId}`}`);
         const standingsResult = await db.query(mainStandingsQuery, queryParams);
-        console.log(`[Standings API Backend] Main query returned ${standingsResult.rows.length} rows.`); // DEBUG LOG
+        console.log(`[Standings API] Main query returned ${standingsResult.rows.length} rows.`);
 
         // --- Combine Results & Calculate Movement/Accuracy ---
         const finalStandings = standingsResult.rows.map(row => {
-            // row.user_id comes from the query (selected as u.user_id)
             const userId = row.user_id;
             const currentRank = parseInt(row.rank, 10);
-            // previousRanksMap was keyed by user_id
             const previousRank = previousRanksMap.get(userId);
             let movement = null;
-
             if (previousRank !== undefined) {
                 movement = previousRank - currentRank;
             }
 
-            const totalPredictions = row.totalpredictions; // These are lowercase from SQL result
-            const correctOutcomes = row.correctoutcomes;
-            const exactScores = row.exactscores;
-            const points = row.points;
-
+            const totalPredictions = parseInt(row.totalpredictions, 10);
+            const correctOutcomes = parseInt(row.correctoutcomes, 10);
+            const exactScores = parseInt(row.exactscores, 10);
             let accuracy = null;
             if (totalPredictions > 0) {
                 accuracy = (correctOutcomes * 100.0) / totalPredictions;
             }
 
+            // *** USE team_name if available, otherwise use original name ***
+            const displayName = row.team_name || row.name || `User ${userId}`; // Fallback logic
+
             // Return camelCase object for frontend
             return {
                 rank: currentRank,
-                userId: userId, // Send user_id
-                name: row.name,
-                points: parseInt(points, 10), // Parse points
+                userId: userId,
+                name: displayName, // <<< Use calculated display name
+                points: parseInt(row.points, 10),
                 movement: movement,
-                totalPredictions: parseInt(totalPredictions, 10),
-                correctOutcomes: parseInt(correctOutcomes, 10),
-                exactScores: parseInt(exactScores, 10),
-                accuracy: accuracy
+                totalPredictions: totalPredictions,
+                correctOutcomes: correctOutcomes,
+                exactScores: exactScores,
+                accuracy: accuracy // Already calculated or null
             };
         });
 
-        console.log(`[Standings API Backend] Sending ${finalStandings.length} standings entries.`); // DEBUG LOG
-        res.status(200).json(finalStandings);
+        console.log(`[Standings API] Sending ${finalStandings.length} standings entries.`);
+        res.status(200).json(finalStandings); // Already camelCase from mapping logic
 
     } catch (error) {
-        // Keep existing console log
         const errorIdentifier = isOverall ? 'overall' : `round ${requestedRoundId || 'invalid'}`;
-        console.error(`[Standings API Backend] CATCH BLOCK Error fetching standings for ${errorIdentifier}:`, error); // DEBUG LOG
+        console.error(`[Standings API] CATCH BLOCK Error fetching standings for ${errorIdentifier}:`, error);
         next(error);
     }
 });

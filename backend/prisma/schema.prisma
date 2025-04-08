@@ -14,26 +14,30 @@ model User {
   name          String
   email         String    @unique
   passwordHash  String    @map("password_hash")
-  role          String    @default("PLAYER") // Assuming PLAYER/ADMIN roles
+  role          String    @default("PLAYER")
+  teamName      String?   @map("team_name")
+  // avatarUrl  String?   @map("avatar_url") // Future placeholder
   createdAt     DateTime  @default(now()) @map("created_at")
-  rounds        Round[]   @relation("CreatedBy") // Relation for created_by FK
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
+  rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]
 
-  @@map("users") // Map model to lowercase 'users' table
+  @@map("users")
 }
 
 model Round {
   roundId       Int       @id @default(autoincrement()) @map("round_id")
   name          String
   deadline      DateTime
-  status        String    // 'SETUP', 'OPEN', 'CLOSED', 'COMPLETED'
+  status        String
   createdByUserId Int     @map("created_by")
   createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
   fixtures      Fixture[]
   predictions   Prediction[]
   creator       User      @relation("CreatedBy", fields: [createdByUserId], references: [userId])
 
-  @@map("rounds") // Map model to lowercase 'rounds' table
+  @@map("rounds")
 }
 
 model Fixture {
@@ -42,13 +46,18 @@ model Fixture {
   homeTeam       String    @map("home_team")
   awayTeam       String    @map("away_team")
   matchTime      DateTime  @map("match_time")
-  homeScore      Int?      @map("home_score") // Nullable scores
-  awayScore      Int?      @map("away_score") // Nullable scores
+  homeScore      Int?      @map("home_score")
+  awayScore      Int?      @map("away_score")
+  status         String?   @default("SCHEDULED") @map("status") // Status added previously
   createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
   round          Round     @relation(fields: [roundId], references: [roundId])
   predictions    Prediction[]
 
-  @@map("fixtures") // Map model to lowercase 'fixtures' table
+  // Unique constraint added previously
+  @@unique([roundId, homeTeam, awayTeam, matchTime], map: "fixtures_round_teams_time_key")
+
+  @@map("fixtures")
 }
 
 model Prediction {
@@ -58,14 +67,15 @@ model Prediction {
   roundId             Int     @map("round_id")
   predictedHomeGoals  Int     @map("predicted_home_goals")
   predictedAwayGoals  Int     @map("predicted_away_goals")
-  pointsAwarded       Int?    @map("points_awarded") // Nullable points
+  pointsAwarded       Int?    @map("points_awarded")
   isJoker             Boolean @default(false) @map("is_joker")
-  submittedAt         DateTime @default(now()) @map("submitted_at") // Or use @updatedAt
+  submittedAt         DateTime @default(now()) @map("submitted_at") // Using submittedAt as the creation timestamp
+  // No separate updatedAt needed for predictions based on current logic
   user                User    @relation(fields: [userId], references: [userId])
   fixture             Fixture @relation(fields: [fixtureId], references: [fixtureId])
   round               Round   @relation(fields: [roundId], references: [roundId])
 
-
-  @@unique([userId, fixtureId], map: "predictions_user_id_fixture_id_key") // Explicit map for constraint name
-  @@map("predictions") // Map model to lowercase 'predictions' table
+  // Unique constraint added previously
+  @@unique([userId, fixtureId], map: "predictions_user_id_fixture_id_key")
+  @@map("predictions")
 }

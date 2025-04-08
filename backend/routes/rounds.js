@@ -326,6 +326,45 @@ router.get('/active', protect, async (req, res, next) => {
     }
 });
 
+// --- NEW: GET /api/rounds/latest-completed ---
+/**
+ * @route   GET /api/rounds/latest-completed
+ * @desc    Get the ID and Name of the most recently completed round
+ * @access  Protected (Any logged-in user)
+ */
+router.get('/latest-completed', protect, async (req, res, next) => {
+    console.log(`[${new Date().toISOString()}] User ${req.user.userId} requesting latest completed round.`);
+    try {
+        const latestCompleted = await prisma.round.findFirst({
+            where: { status: 'COMPLETED' },
+            orderBy: { deadline: 'desc' }, // Order by deadline descending to get the latest
+            select: {
+                roundId: true, // Use model field name
+                name: true     // Use model field name
+            }
+        });
+
+        if (!latestCompleted) {
+            console.log(`[${new Date().toISOString()}] No completed rounds found.`);
+            // Send 204 No Content instead of 404, as it's not an error, just no data yet
+            return res.status(204).send();
+        }
+
+        console.log(`[${new Date().toISOString()}] Found latest completed round: ID ${latestCompleted.roundId}`);
+        res.status(200).json(latestCompleted); // Returns { roundId, name }
+
+    } catch (error) {
+        console.error(`[${new Date().toISOString()}] Error fetching latest completed round:`, error);
+        next(error);
+    }
+});
+// --- END NEW ROUTE ---
+
+// --- Round Management (Admin Only) ---
+// POST /api/rounds
+// ... (rest of the file) ...
+
+module.exports = router;
 
 // ======================================================
 // === Parameterized Routes (:roundId) Last ===
