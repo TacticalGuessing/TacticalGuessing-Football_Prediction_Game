@@ -2,6 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const db = require('./db'); // Make sure path is correct
 
 // Import Routers
@@ -20,6 +21,12 @@ const PORT = process.env.PORT || 5001;
 // Middleware
 app.use(cors()); // Allow frontend requests
 app.use(express.json()); // Parse JSON request bodies
+
+// --- Static File Serving ---
+// Serve files from the 'uploads' directory at the '/uploads' URL path
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+console.log(`[Server] Serving static files from ${path.join(__dirname, 'uploads')} at /uploads`);
+// ---------------------------
 
 // API Routes
 app.get('/api/health', (req, res) => res.status(200).json({ status: 'API is running' }));

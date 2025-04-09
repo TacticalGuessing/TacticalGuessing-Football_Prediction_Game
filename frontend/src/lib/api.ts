@@ -25,6 +25,7 @@ export interface User {
     email: string;
     role: 'PLAYER' | 'ADMIN';
     teamName?: string | null;
+    avatarUrl?: string | null; // <<< ADD THIS LINE
 }
 
 export interface AuthResponse {
@@ -118,6 +119,10 @@ export interface StandingEntry {
   correctOutcomes: number; // 'Outcome' column
   exactScores: number; // 'Exact' column
   accuracy: number | null; // Percentage (e.g., 75.5) or null if no predictions
+  // --- ADD THESE LINES ---
+  teamName?: string | null;  // Optional: User's chosen display name
+  avatarUrl?: string | null; // Optional: Relative path to avatar
+  // -----------------------
 }
 // ========================================================
 // ========================================================
@@ -233,48 +238,135 @@ export interface RoundSummaryResponse {
 
 // --- END: Round Summary Interfaces ---
 
+// --- Custom API Error Class ---
+export class ApiError extends Error {
+    status: number;
+    data?: unknown; // <<< CHANGED 'any' TO 'unknown'
+
+    constructor(message: string, status: number, data?: unknown) { // <<< CHANGED 'any' TO 'unknown'
+        super(message);
+        this.name = 'ApiError';
+        this.status = status;
+        this.data = data;
+
+        if (Error.captureStackTrace) {
+            Error.captureStackTrace(this, ApiError);
+        }
+    }
+}
+// --- End Custom API Error Class ---
 
 // --- Helper Function ---
 
 /**
  * A wrapper around fetch that automatically adds the Authorization header
- * and handles common error scenarios.
+ * and handles common error scenarios using the Headers object API.
+ * Handles JSON bodies and FormData bodies correctly regarding Content-Type.
  * NOTE: This helper *returns the Response object* on success, requires manual .json() parsing.
- * It throws an error on non-ok responses.
+ * It throws an instance of ApiError on non-ok responses.
  */
-const fetchWithAuth = async (url: string, options: RequestInit = {}, token: string | null): Promise<Response> => {
-    const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...Object.entries(options.headers || {}).reduce((acc, [key, value]) => {
-            acc[key] = String(value);
-            return acc;
-          }, {} as Record<string, string>)
-    };
+// Define a type that extends RequestInit but allows 'body' to be an object too
+type FetchOptions = Omit<RequestInit, 'body'> & {
+    body?: BodyInit | Record<string, unknown> | null; // Allow standard BodyInit OR a plain object
+};
 
-    if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-    }
+
+
+
+const fetchWithAuth = async (
+    url: string,
+    options: FetchOptions = {},
+    token: string | null // Linter incorrectly flags this, but it's used below
+): Promise<Response> => {
+   // ...
+   const headers = new Headers(options.headers);
+   // ...
+
+   // --- ADD THIS BLOCK BACK ---
+   // Add Authorization header if token exists
+   if (token) { // <<< Use the token parameter
+    headers.set('Authorization', `Bearer ${token}`);
+}
+// --- END OF BLOCK TO ADD ---
+
+   // Adjust internal body type to match FetchOptions
+   let body: BodyInit | (object & { [key: string]: unknown }) | null | undefined = options.body;
+
+   // --- Content-Type and Body Handling ---
+   // The check needs to verify it's an object but NOT a standard BodyInit type
+   // This is slightly complex, let's simplify the check:
+   // If it's not FormData and it IS an object (and not null/undefined), treat it as JSON candidate.
+   if (!(body instanceof FormData) && typeof body === 'object' && body !== null) {
+
+       // If it's Blob, BufferSource, URLSearchParams, ReadableStream - it's BodyInit, do nothing here
+       // This check might be imperfect but covers common cases.
+       const isStandardBodyInitObject = body instanceof Blob ||
+                                       ArrayBuffer.isView(body) || // TypedArrays, DataView
+                                       body instanceof ArrayBuffer ||
+                                       body instanceof URLSearchParams ||
+                                       'pipe' in body; // Duck-typing for ReadableStream
+
+       if (!isStandardBodyInitObject) { // It's likely our plain JS object
+           if (!headers.has('Content-Type')) {
+               headers.set('Content-Type', 'application/json');
+           }
+           if (headers.get('Content-Type')?.includes('application/json')) {
+               try {
+                   body = JSON.stringify(body); // Stringify our plain object
+               } catch (error) {
+                   console.error("[fetchWithAuth] Failed to stringify request body:", error);
+                   throw new Error("Failed to process request data before sending.");
+               }
+           }
+       }
+       // If it WAS a standard BodyInit object (like Blob), it passes through without stringification
+   }
+   // --- End Content-Type and Body Handling ---
+
+    console.log(`[fetchWithAuth] Request: ${options.method || 'GET'} ${url}`);
 
     const response = await fetch(`${API_BASE_URL}${url}`, {
-        ...options,
+        ...options, // Spread original options
         headers: headers,
+        // Cast 'body' back to BodyInit as that's what fetch expects after our potential stringification
+        body: body as BodyInit | null | undefined,
     });
 
-    if (!response.ok) {
-      let errorMessage = `API Error: ${response.status} ${response.statusText}`;
-      try {
-          // Attempt to read error message from backend { message: "..." } structure
-          const errorData = await response.json();
-          errorMessage = errorData?.message || errorMessage;
-      } catch {
-          // Ignore error if response body is not JSON or empty
-      }
-      console.error("API Fetch Error:", errorMessage, "URL:", url, "Options:", options);
-      // Throw a new Error object so stack trace originates here
-      throw new Error(errorMessage);
-    }
+     console.log(`[fetchWithAuth] Response Status for ${url}: ${response.status}`);
 
-    return response; // Returns the raw Response object on success
+     if (!response.ok) {
+        // Initialize errorMessage with the base message
+        let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+        // Initialize errorData as null, will be reassigned if JSON parsing succeeds
+        let errorData: unknown = null;
+
+        try {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+                errorData = await response.json(); // Assign parsed JSON here
+                if (typeof errorData === 'object' && errorData !== null && 'message' in errorData && typeof (errorData as {message: unknown}).message === 'string') {
+                    errorMessage = (errorData as {message: string}).message; // Reassign errorMessage
+                } else {
+                    errorMessage = `${errorMessage} (Received JSON error object)`; // Reassign errorMessage
+                }
+                console.error(`[fetchWithAuth] API Error Response (${response.status}) for ${url}:`, errorData);
+            } else {
+                const textError = await response.text();
+                console.error(`[fetchWithAuth] API Error Response (${response.status}) for ${url} (non-JSON):`, textError);
+                if (textError) {
+                    errorMessage = `${errorMessage} - ${textError.substring(0, 150)}`; // Reassign errorMessage
+                }
+            }
+        } catch (parseError) { // <<< Catch block
+            // Use the parseError variable in the log message
+            console.error(`[fetchWithAuth] Error parsing error response body for ${url}:`, parseError); // <<< USED parseError
+        }
+
+        // Throw the custom ApiError with potentially updated errorMessage and errorData
+        throw new ApiError(errorMessage, response.status, errorData);
+     }
+
+    return response;
 };
 
 // --- Helper Function for Case Mapping ---
@@ -316,27 +408,21 @@ const mapArrayToCamelCase = <T>(arr: any[]): T[] => {
  * Registers a new user.
  */
 export const registerUser = async (userData: RegisterUserData): Promise<void> => {
-    // Send camelCase, assume backend handles it or converts internally
     await fetchWithAuth('/auth/register', {
         method: 'POST',
-        body: JSON.stringify(userData),
+        body: userData as unknown as BodyInit // <<< Add 'as BodyInit'
     }, null);
-    // No return value needed, fetchWithAuth throws on error
 };
 
 /**
  * Logs in a user. Backend should return camelCase AuthResponse.
  */
 export const loginUser = async (credentials: LoginCredentials): Promise<AuthResponse> => {
-    // Send camelCase, backend login likely expects this
     const response = await fetchWithAuth('/auth/login', {
         method: 'POST',
-        body: JSON.stringify(credentials),
+        body: credentials as unknown as BodyInit // <<< Add 'as BodyInit'
     }, null);
-    // Backend auth returns camelCase directly as per previous setup
     const data = await response.json();
-    // Ensure the returned object matches AuthResponse, casting might hide issues
-    // Consider adding runtime validation if necessary
     return data as AuthResponse;
 };
 
@@ -373,21 +459,13 @@ export const getActiveRound = async (token: string): Promise<ActiveRoundResponse
  * Sends camelCase payload to the backend.
  */
 export const savePredictions = async (predictions: PredictionPayload[], token: string): Promise<void> => {
-    // Backend expects { predictions: [...] } where each prediction uses camelCase keys
     const payload = {
-        // Map the input array (which now includes isJoker) to the format expected by the backend
-        predictions: predictions.map(p => ({
-            fixtureId: p.fixtureId,                 // Send camelCase
-            predictedHomeGoals: p.predictedHomeGoals, // Send camelCase
-            predictedAwayGoals: p.predictedAwayGoals, // Send camelCase
-            isJoker: p.isJoker // *** MODIFIED: Uncommented to send joker status ***
-        }))
+        predictions: predictions // The outer object is the one to pass
     };
-    await fetchWithAuth('/predictions', { // Endpoint POST /api/predictions accepts this payload
+    await fetchWithAuth('/predictions', {
         method: 'POST',
-        body: JSON.stringify(payload),
+        body: payload, // <<< Pass the raw payload object
     }, token);
-     // No return value needed, fetchWithAuth throws on error
 };
 
 // ========================================================
@@ -446,43 +524,91 @@ export const generateRandomUserPredictions = async (token: string): Promise<{ me
  * @returns Promise resolving to the updated User object (excluding passwordHash).
  */
 export const setTeamName = async (teamName: string, token: string): Promise<User> => {
-    const url = '/users/profile/team-name'; // Matches backend route
-    console.log(`%c[api.ts] Calling setTeamName: ${url}`, 'color: darkgoldenrod;');
-
-    if (!token) throw new Error("Authentication token is missing.");
-    // Basic validation on the input string type, backend handles trimming/length
-    if (typeof teamName !== 'string') {
-        console.error('%c[setTeamName] Invalid teamName provided (must be a string):', 'color: red;', teamName);
-        throw new Error("Invalid Team Name format.");
-    }
-
-    try {
-        const response = await fetchWithAuth(url, {
-            method: 'POST',
-            body: JSON.stringify({ teamName: teamName }) // Send in expected { teamName: "..." } format
-        }, token);
-        console.log(`%c[setTeamName] fetchWithAuth successful`, 'color: darkgoldenrod;');
-
-        const updatedUserData = await response.json(); // Expect backend to return updated User object
-
-        // Validate response structure
-        if (!updatedUserData || typeof updatedUserData.userId !== 'number' || typeof updatedUserData.name !== 'string') {
-             console.error('%c[setTeamName] Invalid response format:', 'color: red;', updatedUserData);
-             throw new Error("Received invalid user data format from server after update.");
-         }
-
-        console.log(`%c[setTeamName] Success response:`, 'color: darkgoldenrod;', updatedUserData);
-        // Return the updated user data (which should match the User interface)
-        return updatedUserData as User;
-
-    } catch (error) {
-        console.error(`%c[setTeamName] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
-        if (error instanceof Error) { throw error; } // Re-throw original error
-        else { throw new Error('An unknown error occurred while setting the team name.'); }
-    }
+    const url = '/users/profile/team-name';
+    const payload = { teamName: teamName }; // Create the object
+    const response = await fetchWithAuth(url, {
+        method: 'POST',
+        body: payload // <<< Pass the raw object
+    }, token);
+    const updatedUserData = await response.json();
+    return updatedUserData as User;
 };
 
 // --- END NEW Profile Function ---
+
+// --- NEW Avatar Upload Function ---
+
+/**
+ * Uploads the user's avatar image.
+ * @param file - The image File object to upload.
+ * @param token - The user's authentication token.
+ * @returns The updated User object from the backend.
+ * @throws Will throw an ApiError if the fetch fails or the API returns an error.
+ */
+export const uploadAvatar = async (file: File, token: string): Promise<User> => {
+    const url = '/users/profile/avatar'; // Matches backend POST route
+    console.log(`%c[api.ts] Calling uploadAvatar: ${url}`, 'color: blueviolet;', { name: file.name, size: file.size, type: file.type });
+
+    if (!token) {
+        console.error('%c[uploadAvatar] Authentication token is missing!', 'color: red;');
+        throw new ApiError("Authentication token is missing.", 401); // Use ApiError
+    }
+    if (!file) {
+        console.error('%c[uploadAvatar] No file provided!', 'color: red;');
+        throw new ApiError("No file selected for upload.", 400); // Use ApiError
+    }
+
+    // --- Create FormData ---
+    const formData = new FormData();
+    // The key 'avatar' MUST match the name used in the backend:
+    // backend/middleware/uploadMiddleware.js -> uploadAvatar.single('avatar')
+    // backend/routes/users.js -> router.post('/profile/avatar', uploadAvatar.single('avatar'), ...)
+    formData.append('avatar', file);
+    // --------------------
+
+    try {
+        const response = await fetchWithAuth(
+            url,
+            {
+                method: 'POST',
+                body: formData,
+                // DO NOT manually set 'Content-Type': 'multipart/form-data' here!
+                // fetchWithAuth and the browser handle this automatically for FormData.
+            },
+            token
+        );
+        console.log(`%c[uploadAvatar] fetchWithAuth successful`, 'color: blueviolet;');
+
+        // Expect backend to return the updated User object on success
+        const updatedUser: User = await response.json();
+
+        // Simple validation of the response structure
+        if (!updatedUser || typeof updatedUser.userId !== 'number' || !updatedUser.email) {
+             console.error('%c[uploadAvatar] Invalid response format received:', 'color: red;', updatedUser);
+             // Throw an error indicating unexpected response from server
+             throw new ApiError("Received invalid user data format from server after avatar upload.", 500); // Or appropriate status
+         }
+
+        console.log(`%c[uploadAvatar] Success response (updated user):`, 'color: blueviolet;', updatedUser);
+        return updatedUser; // Return the updated user data
+
+    } catch (error) {
+        console.error(`%c[uploadAvatar] CATCH BLOCK Error:`, 'color: red; font-weight: bold;', error);
+
+        // Check if it's already an ApiError, otherwise wrap it
+        if (error instanceof ApiError) {
+            throw error; // Re-throw the specific ApiError
+        } else if (error instanceof Error) {
+            // Wrap other errors (like network errors) in a generic ApiError
+             throw new ApiError(`An unexpected error occurred during avatar upload: ${error.message}`, 500);
+        } else {
+             // Fallback for non-Error throws
+             throw new ApiError('An unknown error occurred during avatar upload.', 500);
+        }
+    }
+};
+
+// --- END NEW Avatar Upload Function ---
 
 /**
  * Fetches a list of completed rounds (for standings dropdown).
@@ -576,7 +702,7 @@ export const getRounds = async (token: string, status?: Round['status']): Promis
 export const createRound = async (roundData: CreateRoundPayload, token: string): Promise<Round> => {
     const response = await fetchWithAuth('/rounds', {
         method: 'POST',
-        body: JSON.stringify(roundData), // Sending payload as is (name, deadline)
+        body: roundData as unknown as BodyInit // Sending payload as is (name, deadline)
     }, token);
     const createdRaw = await response.json();
     // Map snake_case response to camelCase
@@ -590,7 +716,7 @@ export const createRound = async (roundData: CreateRoundPayload, token: string):
 export const updateRoundStatus = async (roundId: number, payload: UpdateRoundStatusPayload, token: string): Promise<void> => {
     await fetchWithAuth(`/rounds/${roundId}/status`, {
         method: 'PUT',
-        body: JSON.stringify(payload),
+        body: payload as unknown as BodyInit,
     }, token);
      // No return value expected on success
 };
@@ -604,19 +730,37 @@ export const updateRoundDetails = async (roundId: number, payload: UpdateRoundPa
     const endpoint = `/rounds/${roundId}`; // Target the specific round ID with PUT
     const response = await fetchWithAuth(endpoint, {
         method: 'PUT',
-        body: JSON.stringify(payload), // Send { name?: "...", deadline?: "..." }
+        // Pass raw payload object + assertion
+        body: payload as unknown as BodyInit // <<< CHANGED
     }, token);
 
     // Check if the response includes content before trying to parse JSON
     if (response.status === 204 || !response.headers.get('content-type')?.includes('application/json')) {
-        // Handle cases where backend might not return the updated object (though it should for PUT)
-         console.warn(`Update round details for ID ${roundId} returned status ${response.status} or non-JSON content.`);
-         // Optionally fetch the round again to get updated data, or throw an error
-         // For now, let's assume success but log a warning. Ideally, backend returns the updated resource.
-         // If fetching again: return getRounds(token).then(rounds => rounds.find(r => r.roundId === roundId));
-         throw new Error(`Round updated, but no confirmation data received (Status: ${response.status}). Please refresh manually.`); // Or handle differently
+        console.warn(`Update round details for ID ${roundId} returned status ${response.status} or non-JSON content.`);
+        // Consider how best to handle 204 No Content - maybe fetch the updated round separately?
+        // For now, throwing an error might be disruptive if the update *did* succeed.
+        // Returning a specific indicator or fetching again might be better UX long-term.
+        // Let's modify the error slightly to be less alarming if it was a 204.
+        if (response.status === 204) {
+             console.log(`Round ${roundId} details updated (Status 204). Fetching updated data...`);
+             // Example: Fetch all rounds again and find the updated one
+             // This might not be efficient if you have many rounds.
+             // A dedicated GET /rounds/:id endpoint would be better.
+             // For now, just returning the original payload as a placeholder if needed
+             // Or throwing a less severe error/indicator.
+             // Let's return a modified Round object based on payload as a temporary measure
+             // WARNING: This won't have potentially updated timestamps from the backend.
+             const existingRounds = await getRounds(token); // Assuming getRounds is efficient enough
+             const updatedRound = existingRounds.find(r => r.roundId === roundId);
+             if (updatedRound) return updatedRound; // Return the re-fetched round
+             else throw new Error(`Round ${roundId} updated (Status 204), but failed to re-fetch details.`);
+
+        } else {
+             throw new Error(`Round update responded with status ${response.status} and unexpected content type.`);
+        }
     }
 
+    // If response has JSON content (e.g., status 200)
     const updatedRaw = await response.json();
     // Map snake_case response from backend to camelCase
     return toCamelCase<Round>(updatedRaw);
@@ -648,17 +792,26 @@ export const getRoundFixtures = async (roundId: number, token: string): Promise<
 export const addFixture = async (roundId: number, fixtureData: AddFixturePayload, token: string): Promise<Fixture> => {
     const response = await fetchWithAuth(`/rounds/${roundId}/fixtures`, {
         method: 'POST',
-        body: JSON.stringify(fixtureData),
+        // Pass raw fixtureData object + assertion
+        body: fixtureData as unknown as BodyInit, // <<< CHANGED
     }, token);
 
-    if (!(response.status === 201 || response.status === 200)) {
-         throw new Error(`Failed to add fixture, received status ${response.status}`);
+    // Expect 201 Created with the created fixture in the body
+    if (response.status !== 201) {
+         // Handle other potential errors (e.g., 400 Bad Request, 404 Round Not Found, 500 Server Error)
+         let errorMessage = `Failed to add fixture, received status ${response.status}`;
+         try {
+             const errorData = await response.json();
+             errorMessage = errorData?.message || errorMessage;
+         } catch { /* Ignore if body isn't JSON */ }
+         throw new ApiError(errorMessage, response.status); // Use ApiError if possible
     }
+
+    // Check content type before parsing JSON
      if (!response.headers.get('content-type')?.includes('application/json')) {
-         // Handle case where backend might return 201 Created with no body or non-JSON body
-         console.warn(`Add fixture responded with status ${response.status} but non-JSON content.`);
-         // Depending on need, might fetch the fixture list again or throw an error demanding a body
-         throw new Error('Fixture added, but no confirmation data received.');
+         console.warn(`Add fixture responded with status 201 but non-JSON content.`);
+         // If backend guarantees 201 always returns JSON, this is an error state
+         throw new ApiError('Fixture added, but confirmation data has unexpected format.', 201);
      }
 
     const createdRaw = await response.json();
@@ -739,19 +892,43 @@ export const triggerScoring = async (roundId: number, token: string): Promise<vo
 export const importFixtures = async (payload: ImportFixturesPayload, token: string): Promise<{ message: string; count: number }> => {
     const endpoint = '/rounds/import/fixtures';
     try {
-        const response = await fetchWithAuth(endpoint, { method: 'POST', body: JSON.stringify(payload) }, token);
-        // Expect 200 or 201 with JSON body
-        if ((response.status === 201 || response.status === 200) && response.headers.get('content-type')?.includes('application/json')) {
-            // Backend returns camelCase { message, count }
-            return response.json();
+        const response = await fetchWithAuth(endpoint, {
+            method: 'POST',
+            // Pass raw payload object + assertion
+            body: payload as unknown as BodyInit // <<< CHANGED
+        }, token);
+
+        // Check for successful status codes (200 OK or 201 Created)
+        if (response.ok) { // Handles 200-299 range
+            // Ensure response is JSON before parsing
+            if (response.headers.get('content-type')?.includes('application/json')) {
+                 const responseData = await response.json();
+                 // Optional: Add basic validation for responseData structure
+                 if (responseData && typeof responseData.message === 'string' && typeof responseData.count === 'number') {
+                     return responseData;
+                 } else {
+                      console.error('Import fixtures successful, but response format is invalid:', responseData);
+                      throw new ApiError('Fixture import succeeded but received invalid confirmation data.', response.status);
+                 }
+            } else {
+                 console.warn(`Import fixtures responded with status ${response.status} but non-JSON content.`);
+                 // Decide how to handle success without expected JSON body (e.g., return default message or throw)
+                 throw new ApiError(`Fixture import status ${response.status} ok, but confirmation data format is incorrect.`, response.status);
+            }
         } else {
-             let responseBody = ''; try { responseBody = await response.text(); } catch { /* ignore */ }
-             throw new Error(`Fixture import responded with status ${response.status} but unexpected content: ${responseBody.substring(0, 100)}`);
+            // Handle non-ok responses
+            let errorMessage = `Fixture import failed with status ${response.status}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData?.message || errorMessage;
+            } catch { /* ignore */ }
+            throw new ApiError(errorMessage, response.status);
         }
     } catch (error: unknown) {
+        // Catch fetch errors or errors thrown from response handling
         console.error(`Error importing fixtures for round ${payload.roundId}:`, error);
-        if (error instanceof Error) { throw error; }
-        else { throw new Error('An unknown error occurred while importing fixtures.'); }
+         if (error instanceof ApiError || error instanceof Error) { throw error; }
+         else { throw new Error('An unknown error occurred while importing fixtures.'); }
     }
 };
 
@@ -762,19 +939,40 @@ export const importFixtures = async (payload: ImportFixturesPayload, token: stri
 export const generateRandomResults = async (roundId: number, token: string): Promise<{ message: string; count: number }> => {
     const endpoint = `/rounds/${roundId}/fixtures/random-results`;
     try {
+        // POST request typically implies sending data, but this one might not need a body.
+        // If it requires a body (even an empty one), add body: {} as unknown as BodyInit
+        // Assuming no body is needed for this specific POST based on previous logic:
         const response = await fetchWithAuth(endpoint, { method: 'POST' }, token);
-        // Expect 200 OK with JSON body
-        if (response.status === 200 && response.headers.get('content-type')?.includes('application/json')) {
-             // Backend returns camelCase { message, count }
-             return response.json();
+
+        // Check for successful status codes
+        if (response.ok) { // Handles 200-299 range
+             // Ensure response is JSON before parsing
+             if (response.headers.get('content-type')?.includes('application/json')) {
+                 const responseData = await response.json();
+                 // Optional: Add basic validation for responseData structure
+                 if (responseData && typeof responseData.message === 'string' && typeof responseData.count === 'number') {
+                     return responseData;
+                 } else {
+                     console.error('Generate random results successful, but response format is invalid:', responseData);
+                     throw new ApiError('Random results generated but received invalid confirmation data.', response.status);
+                 }
+             } else {
+                 console.warn(`Generate random results responded with status ${response.status} but non-JSON content.`);
+                 throw new ApiError(`Random results generation status ${response.status} ok, but confirmation data format is incorrect.`, response.status);
+             }
         } else {
-             console.warn(`Generate random results responded with unexpected status: ${response.status}`);
-             let responseBody = ''; try { responseBody = await response.text(); } catch { /* ignore */ }
-             throw new Error(`Generate random results responded with status ${response.status} but unexpected content: ${responseBody.substring(0, 100)}`);
+             // Handle non-ok responses
+             let errorMessage = `Failed to generate random results, received status ${response.status}`;
+             try {
+                 const errorData = await response.json();
+                 errorMessage = errorData?.message || errorMessage;
+             } catch { /* ignore */ }
+             throw new ApiError(errorMessage, response.status);
         }
     } catch (error: unknown) {
+        // Catch fetch errors or errors thrown from response handling
         console.error(`Error generating random results for round ${roundId}:`, error);
-        if (error instanceof Error) { throw error; }
+        if (error instanceof ApiError || error instanceof Error) { throw error; }
         else { throw new Error('An unknown error occurred while generating random results.'); }
     }
 };
@@ -815,10 +1013,12 @@ export const fetchExternalFixtures = async (
     if (!token) throw new Error("Authentication token is missing.");
     if (!competitionCode || !dateFrom || !dateTo) throw new Error("Competition code and date range are required.");
 
+    const payload = { competitionCode, dateFrom, dateTo };
+
     try {
         const response = await fetchWithAuth(url, {
             method: 'POST',
-            body: JSON.stringify({ competitionCode, dateFrom, dateTo }) // Send payload in body
+            body: payload as unknown as BodyInit // Send payload in body
         }, token);
         console.log(`%c[fetchExternalFixtures] fetchWithAuth successful`, 'color: cyan;');
 
@@ -858,8 +1058,8 @@ export const importSelectedFixtures = async (
     roundId: number,
     // Pass only the necessary data for backend insertion
     fixturesToImport: { homeTeam: string; awayTeam: string; matchTime: string }[]
-): Promise<{ message: string; count: number }> => { // Expect same response shape as matchday import
-    const url = `/rounds/${roundId}/import-selected`; // Matches new backend route
+): Promise<{ message: string; count: number }> => {
+    const url = `/rounds/${roundId}/import-selected`;
     console.log(`%c[api.ts] Calling importSelectedFixtures for round ${roundId}`, 'color: olive;', { count: fixturesToImport.length });
 
     if (!token) throw new Error("Authentication token is missing.");
@@ -868,15 +1068,19 @@ export const importSelectedFixtures = async (
         throw new Error("At least one fixture must be provided to import.");
     }
 
+    // --- DEFINE payload object ---
+    const payload = { fixturesToImport: fixturesToImport };
+    // ---------------------------
+
     try {
         const response = await fetchWithAuth(url, {
             method: 'POST',
-            // Send in the expected { fixturesToImport: [...] } format
-            body: JSON.stringify({ fixturesToImport: fixturesToImport })
+            // Pass raw payload object + assertion
+            body: payload as unknown as BodyInit // <<< CHANGED
         }, token);
         console.log(`%c[importSelectedFixtures] fetchWithAuth successful`, 'color: olive;');
 
-        const responseData = await response.json(); // Expect { message, count }
+        const responseData = await response.json();
 
         // Validate response structure
         if (!responseData || typeof responseData.message !== 'string' || typeof responseData.count !== 'number') {

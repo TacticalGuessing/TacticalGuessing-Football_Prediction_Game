@@ -137,17 +137,17 @@ router.get('/', protect, async (req, res, next) => {
             RankedUsers AS (
                  SELECT
                     u.user_id,
-                    u.name, -- Keep original name
-                    u.team_name, -- <<< ADD team_name selection
+                    u.name,         -- <<< Real name
+                    u.team_name,    -- <<< Team name
+                    u.avatar_url,   -- <<< THIS WAS ADDED
                     COALESCE(us.totalPredictions, 0) AS totalPredictions,
                     COALESCE(us.correctOutcomes, 0) AS correctOutcomes,
                     COALESCE(us.exactScores, 0) AS exactScores,
                     COALESCE(us.totalPoints, 0) AS points,
-                    -- Rank based on points, use original name for tie-breaking
                     RANK() OVER (ORDER BY COALESCE(us.totalPoints, 0) DESC, u.name ASC) AS rank
                 FROM users u
                 LEFT JOIN UserStats us ON u.user_id = us.user_id
-                WHERE u.role = 'PLAYER' -- Ensure only players are ranked
+                WHERE u.role = 'PLAYER'
             )
             SELECT * FROM RankedUsers ORDER BY rank;
         `;
@@ -182,13 +182,15 @@ router.get('/', protect, async (req, res, next) => {
             return {
                 rank: currentRank,
                 userId: userId,
-                name: displayName, // <<< Use calculated display name
+                name: row.name,          // <<< Ensure this is user's REAL name
+                teamName: row.team_name, // <<< ADDED/Ensure this is included
+                avatarUrl: row.avatar_url, // <<< ADDED THIS
                 points: parseInt(row.points, 10),
                 movement: movement,
                 totalPredictions: totalPredictions,
                 correctOutcomes: correctOutcomes,
                 exactScores: exactScores,
-                accuracy: accuracy // Already calculated or null
+                accuracy: accuracy
             };
         });
 

@@ -16,7 +16,7 @@ model User {
   passwordHash  String    @map("password_hash")
   role          String    @default("PLAYER")
   teamName      String?   @map("team_name")
-  // avatarUrl  String?   @map("avatar_url") // Future placeholder
+  avatarUrl     String?   @map("avatar_url") // Future placeholder
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
   rounds        Round[]   @relation("CreatedBy")

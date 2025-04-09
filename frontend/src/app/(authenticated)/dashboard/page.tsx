@@ -1,275 +1,254 @@
-// frontend/src/app/(authenticated)/dashboard/page.tsx
+// frontend/src/app/(authenticated)/standings/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
+// Ensure StandingEntry interface includes avatarUrl and teamName (optional)
+import { getStandings, getCompletedRounds, SimpleRound, StandingEntry } from '@/lib/api';
 import { useAuth } from '@/context/AuthContext';
-import { toast } from 'react-hot-toast';
+import MovementIndicator from '@/components/Standings/MovementIndicator';
+import Avatar from '@/components/Avatar'; // <<< Ensure this import is present
 
-// Import relevant API functions and types
-import {
-    getStandings,
-    getLatestCompletedRound,
-    getRoundSummary,
-    StandingEntry,
-    SimpleRound,
-    RoundSummaryResponse
-} from '@/lib/api';
-// Assuming you have these components or render inline
-// import StandingsTableSnippet from '@/components/Dashboard/StandingsTableSnippet';
-// import LatestSummaryHighlights from '@/components/Dashboard/LatestSummaryHighlights';
-// import MovementIndicator from '@/components/Standings/MovementIndicator';
-
-export default function DashboardPage() {
-    const { user, token, isLoading: isAuthLoading } = useAuth();
-
-    // State for dashboard data
-    const [overallStandings, setOverallStandings] = useState<StandingEntry[]>([]);
-    const [latestSummary, setLatestSummary] = useState<RoundSummaryResponse | null>(null);
-    const [latestRoundInfo, setLatestRoundInfo] = useState<SimpleRound | null>(null); // Store basic info too
-
-    // Loading and Error State
-    const [isLoadingData, setIsLoadingData] = useState(true);
-    const [pageError, setPageError] = useState<string | null>(null);
-
-    // Fetch all necessary data for the dashboard
-    const fetchDashboardData = useCallback(async () => {
-        if (!token) {
-             setIsLoadingData(false); // No token, stop loading
-             setPageError("Authentication required to load dashboard.");
-             return;
-        };
-
-        setIsLoadingData(true);
-        setPageError(null);
-        // Reset data on refetch? Maybe not for smoother updates.
-        // setOverallStandings([]);
-        // setLatestSummary(null);
-        // setLatestRoundInfo(null);
-
-        console.log(`%c[Dashboard] Fetching data...`, 'color: blue');
-
-        try {
-            // Use Promise.allSettled to fetch crucial data even if secondary fails
-            const results = await Promise.allSettled([
-                getStandings(token), // Fetch overall standings (index 0)
-                getLatestCompletedRound(token) // Fetch latest completed round info (index 1)
-            ]);
-
-            let standingsError = null;
-            let latestRoundError = null;
-            let latestRound: SimpleRound | null = null;
-
-            // Process Standings Result
-            if (results[0].status === 'fulfilled') {
-                 // Limit to top 5 for snippet display
-                setOverallStandings(results[0].value.slice(0, 5));
-                 console.log(`%c[Dashboard] Standings fetched.`, 'color: green;');
-            } else {
-                console.error("[Dashboard] Error fetching standings:", results[0].reason);
-                standingsError = results[0].reason instanceof Error ? results[0].reason.message : "Could not load standings.";
-            }
-
-            // Process Latest Completed Round Result
-            if (results[1].status === 'fulfilled') {
-                latestRound = results[1].value; // This is { roundId, name } or null
-                setLatestRoundInfo(latestRound);
-                 console.log(`%c[Dashboard] Latest completed round fetched:`, 'color: green;', latestRound);
-            } else {
-                 console.error("[Dashboard] Error fetching latest completed round:", results[1].reason);
-                 latestRoundError = results[1].reason instanceof Error ? results[1].reason.message : "Could not load latest round info.";
-            }
-
-            // If we found a latest completed round, fetch its summary
-            let summaryError = null;
-            if (latestRound?.roundId) {
-                try {
-                    console.log(`%c[Dashboard] Fetching summary for round ${latestRound.roundId}...`, 'color: teal;');
-                    const summary = await getRoundSummary(latestRound.roundId, token);
-                    setLatestSummary(summary);
-                     console.log(`%c[Dashboard] Summary fetched.`, 'color: green;');
-                } catch (summaryErr: unknown) {
-                    console.error(`[Dashboard] Error fetching summary for round ${latestRound.roundId}:`, summaryErr);
-                    summaryError = summaryErr instanceof Error ? summaryErr.message : "Could not load latest round summary.";
-                    setLatestSummary(null); // Ensure summary is null on error
-                }
-            } else {
-                 console.log(`%c[Dashboard] No latest completed round found, skipping summary fetch.`, 'color: orange;');
-                 setLatestSummary(null); // No round means no summary
-            }
-
-            // Combine errors if necessary
-            const combinedError = [standingsError, latestRoundError, summaryError].filter(Boolean).join('; ');
-            if (combinedError) {
-                 setPageError(combinedError);
-                 toast.error("Some dashboard data failed to load.", { duration: 4000 });
-            }
-
-
-        } catch (generalError) {
-             // Catch unexpected errors during Promise.allSettled itself (unlikely)
-             console.error("[Dashboard] Unexpected error fetching data:", generalError);
-             setPageError("An unexpected error occurred loading the dashboard.");
-             toast.error("Failed to load dashboard data.");
-        } finally {
-            setIsLoadingData(false);
-        }
-    }, [token]); // Depends only on token
-
-    // Effect to fetch data when authenticated
+export default function StandingsPage() {
+    const renderCount = useRef(0);
     useEffect(() => {
-        if (!isAuthLoading && token) {
-            fetchDashboardData();
-        } else if (!isAuthLoading && !token) {
-            // Handle case where user logs out - clear data? Or rely on redirect?
-            setIsLoadingData(false);
-            setPageError("Please log in."); // Show message if stuck on page
-        }
-    }, [isAuthLoading, token, fetchDashboardData]);
+      renderCount.current += 1;
+      // console.log(`%cStandingsPage Render #${renderCount.current}`, 'color: blue; font-weight: bold;'); // Keep for debugging if needed
+    });
 
+    const { token, isLoading: isAuthLoading } = useAuth();
+
+    // State
+    const [rounds, setRounds] = useState<SimpleRound[]>([]);
+    const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null); // null for Overall
+    const [isLoadingRounds, setIsLoadingRounds] = useState(true);
+    const [roundsError, setRoundsError] = useState<string | null>(null);
+    const [standings, setStandings] = useState<StandingEntry[]>([]); // Type should include avatarUrl/teamName
+    const [isLoadingStandings, setIsLoadingStandings] = useState(true);
+    const [standingsError, setStandingsError] = useState<string | null>(null);
+    const [tableTitle, setTableTitle] = useState('Overall Standings');
+
+    // Logging
+    // console.log(`%cCALLBACK DEPS: Token defined: ${!!token}`, 'color: gray');
+
+    // Fetch Completed Rounds
+    const fetchCompletedRounds = useCallback(async () => {
+        // console.log('%cRunning fetchCompletedRounds...', 'color: green;');
+        if (!token) { /* console.log('%cfetchCompletedRounds: No token, returning.', 'color: orange;'); */ return; }
+        setIsLoadingRounds(true); setRoundsError(null);
+        try {
+            const completedRoundsData = await getCompletedRounds(token);
+            // console.log('%cfetchCompletedRounds: SUCCESS', 'color: green;', completedRoundsData);
+            setRounds(completedRoundsData || []);
+        } catch (err: unknown) {
+            console.error("fetchCompletedRounds: ERROR:", err);
+            const message = (err instanceof Error) ? err.message : 'Failed to load rounds.';
+            setRoundsError(message); setRounds([]);
+        } finally { setIsLoadingRounds(false); }
+    }, [token]);
+
+    // Fetch Standings
+    const fetchStandings = useCallback(async (roundIdStr: string | null) => {
+        // console.log(`%cRunning fetchStandings for roundIdStr: ${roundIdStr}...`, 'color: purple;');
+        if (!token) {
+            // console.log('%cfetchStandings: No token, returning.', 'color: orange;');
+            setStandingsError("Authentication required."); setStandings([]); setIsLoadingStandings(false); return;
+        }
+        let roundIdNum: number | undefined = undefined; // Use undefined for overall
+        if (roundIdStr !== null) {
+            const parsed = parseInt(roundIdStr, 10);
+            if (isNaN(parsed)) {
+                // console.log(`%cfetchStandings: Invalid roundIdStr ${roundIdStr}`, 'color: red;');
+                setStandingsError("Invalid round selected."); setStandings([]); setIsLoadingStandings(false); return;
+            }
+            roundIdNum = parsed;
+        }
+        setIsLoadingStandings(true); setStandingsError(null);
+        try {
+            const data: StandingEntry[] = await getStandings(token, roundIdNum);
+            // console.log(`%cfetchStandings: SUCCESS for ${roundIdNum ?? 'overall'}`, 'color: purple;', data);
+            setStandings(data || []);
+        } catch (err: unknown) {
+            console.error(`fetchStandings: ERROR for ${roundIdNum ?? 'overall'}:`, err);
+            const message = (err instanceof Error) ? err.message : 'Failed to fetch standings.';
+            setStandingsError(message); setStandings([]);
+        } finally { setIsLoadingStandings(false); }
+    }, [token]);
+
+    // Initial Effects
+    useEffect(() => {
+        // console.log('%cRunning Initial useEffect...', 'color: brown;', { isAuthLoading, hasToken: !!token });
+        if (!isAuthLoading && token) {
+            // console.log('%cInitial useEffect: Conditions met, calling fetches.', 'color: brown;');
+            fetchCompletedRounds();
+            fetchStandings(null); // Fetch overall initially
+        } else if (!isAuthLoading && !token) {
+            // console.log('%cInitial useEffect: No token after loading.', 'color: brown;');
+            setIsLoadingRounds(false); setIsLoadingStandings(false);
+            setRoundsError("Authentication required to load data."); setStandingsError("Authentication required to load data.");
+            setRounds([]); setStandings([]);
+        }
+    }, [token, isAuthLoading, fetchCompletedRounds, fetchStandings]);
+
+    // Effect for Setting Table Title
+    useEffect(() => {
+        // console.log('%cRunning Title useEffect...', 'color: teal;', { selectedRoundId, roundsCount: rounds?.length, isLoadingStandings, standingsError, currentTitle: tableTitle });
+        let newTitle = tableTitle;
+        if (isLoadingStandings) { return; } // Don't update if loading
+        else if (standingsError) { newTitle = `Error Loading Standings`; } // Simplified error title
+        else {
+            if (selectedRoundId !== null) {
+                const roundName = rounds.find(r => r.roundId.toString() === selectedRoundId)?.name;
+                newTitle = (roundName ? `${roundName} Standings` : `Round ${selectedRoundId} Standings`);
+            } else {
+                newTitle = ('Overall Standings');
+            }
+        }
+        if (newTitle !== tableTitle) {
+            // console.log('%cTitle useEffect: Setting title to:', newTitle, 'color: teal;');
+            setTableTitle(newTitle);
+        }
+    }, [selectedRoundId, rounds, isLoadingStandings, standingsError, tableTitle]);
+
+    // Handle dropdown change
+    const handleRoundChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+        const newRoundIdValue = event.target.value;
+        const newSelectedId = newRoundIdValue === '' ? null : newRoundIdValue; // Use null for overall
+        // console.log(`%chandleRoundChange: Selected Value: ${newRoundIdValue}, Mapped ID: ${newSelectedId}`, 'color: darkcyan;');
+        setSelectedRoundId(newSelectedId);
+        fetchStandings(newSelectedId); // Fetch new data on change
+    };
+
+    // --- Base URL logic (defined once, outside map) ---
+    const apiBaseUrlForImages = process.env.NEXT_PUBLIC_API_BASE_URL_FOR_IMAGES || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'; // Ensure port matches backend
+    const baseUrlForImages = apiBaseUrlForImages.replace(/\/api\/?$/, '').replace(/\/$/, '');
+    // ----------------------------------------------------
 
     // --- Render Logic ---
+     if (isAuthLoading) { return <p className="p-4 text-center">Authenticating...</p>; }
+     if (!token && !isAuthLoading) { return ( <div className="p-4 md:p-6"><h1 className="text-2xl font-bold mb-6">Standings</h1><p className="text-red-600 font-semibold">Please log in to view standings.</p></div> ); }
 
-    if (isAuthLoading || isLoadingData) {
-        return <div className="p-4 md:p-6 text-center">Loading Dashboard...</div>;
-    }
-
-     if (!user || !token) { // Check user as well
-          // AuthProvider should redirect, this is a fallback message
-          return ( <div className="p-4 md:p-6 text-center text-red-600">User not authenticated. Redirecting...</div> );
-     }
-
+    const filteredRounds = Array.isArray(rounds) ? rounds.filter(round => round && typeof round.roundId === 'number') : [];
+    const isDropdownDisabled = isLoadingRounds;
+    const numColumns = 8; // Adjusted number of columns if changed
 
     return (
-        <div className="container mx-auto p-4 md:p-6 space-y-8">
-            {/* Welcome Header */}
-            <div>
-                 <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
-                     Welcome back, <span className="text-indigo-600">{user.name}!</span>
-                 </h1>
-                 {/* Optional: Add a brief intro or date */}
-                 <p className="text-gray-600">Here&apos;s the latest from the Prediction Game.</p>
-            </div>
+        <div className="p-4 md:p-6">
+            <h1 className="text-2xl font-bold mb-6">Standings</h1>
 
-
-             {/* Display combined errors if any */}
-             {pageError && (
-                 <div className="p-4 text-center text-red-600 bg-red-100 rounded border border-red-300">
-                     <p>Could not load all dashboard data: {pageError}</p>
-                 </div>
-             )}
-
-
-            {/* Main Content Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-                                {/* Overall Standings Snippet (Left Column / Spans 2 on large screens) */}
-                                <div className="lg:col-span-2 bg-white p-4 md:p-6 rounded-lg shadow border border-gray-200">
-                     <div className="flex justify-between items-center mb-4">
-                        <h2 className="text-xl font-semibold text-gray-700">Overall Standings (Top 5)</h2>
-                         <Link href="/standings" className="text-sm text-blue-600 hover:underline font-medium">View Full Standings →</Link>
-                     </div>
-
-                     {/* Standings Table Snippet */}
-                     <div className="overflow-x-auto">
-                        {overallStandings.length > 0 ? (
-                            <table className="min-w-full divide-y divide-gray-200">
-                                <thead className="bg-gray-50">
-                                    <tr>
-                                        {/* === MODIFIED: Added Headers === */}
-                                        <th scope="col" className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">Pos</th>
-                                        {/* +/- Column maybe omitted for snippet simplicity? Your choice. Let's omit for now. */}
-                                        {/* <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-10">+/-</th> */}
-                                        <th scope="col" className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
-                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-12">Pld</th>
-                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Outcome</th>
-                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Exact</th>
-                                        <th scope="col" className="px-2 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Acc %</th>
-                                        <th scope="col" className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wider w-16">Points</th>
-                                        {/* === END MODIFIED Headers === */}
-                                    </tr>
-                                </thead>
-                                <tbody className="bg-white divide-y divide-gray-200">
-                                    {overallStandings.map((entry) => (
-                                        <tr key={entry.userId}>
-                                            {/* === MODIFIED: Added Cells === */}
-                                            <td className="px-3 py-2 whitespace-nowrap text-sm text-center">{entry.rank}</td>
-                                            {/* Movement cell omitted */}
-                                            <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">{entry.name}</td>
-                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.totalPredictions}</td>
-                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.correctOutcomes}</td>
-                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.exactScores}</td>
-                                            <td className="px-2 py-2 whitespace-nowrap text-sm text-center text-gray-500">{entry.accuracy === null ? '-' : `${entry.accuracy.toFixed(1)}%`}</td>
-                                            <td className="px-3 py-2 whitespace-nowrap text-sm font-bold text-indigo-600 text-right">{entry.points}</td>
-                                            {/* === END MODIFIED Cells === */}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                         ) : (
-                             <p className="text-sm text-gray-500 italic py-4 text-center">Standings data is currently unavailable.</p>
-                         )}
-                     </div>
+            {/* Round Selection and Summary Link Container */}
+            <div className="mb-6 bg-white p-4 rounded shadow border border-gray-200 flex flex-col sm:flex-row gap-4 items-center justify-between">
+                {/* Dropdown Section */}
+                <div className="flex-grow w-full sm:w-auto">
+                    <label htmlFor="roundSelect" className="block text-sm font-medium text-gray-700 mb-1">
+                        View Standings:
+                    </label>
+                    {isLoadingRounds && !roundsError ? (<p className="text-sm text-gray-500">Loading rounds...</p>)
+                    : roundsError ? (<p className="text-sm text-red-600">{roundsError}</p>)
+                    : (
+                        <select
+                            id="roundSelect"
+                            value={selectedRoundId ?? ''} // Handle null state for select value
+                            onChange={handleRoundChange}
+                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
+                            disabled={isDropdownDisabled || isLoadingStandings}
+                            >
+                            <option value="">-- Overall Standings --</option>
+                            {filteredRounds.map((round) => (
+                                <option key={round.roundId} value={round.roundId.toString()}>
+                                    {round.name}
+                                </option>
+                            ))}
+                        </select>
+                    )}
+                    {filteredRounds.length === 0 && !isLoadingRounds && !roundsError && (
+                        <p className="text-sm text-gray-500 mt-2 italic">No completed rounds found.</p>
+                    )}
                 </div>
 
-                {/* Latest Round Summary Snippet (Right Column / Spans 1) */}
-                <div className="bg-white p-4 md:p-6 rounded-lg shadow border border-gray-200">
-                     <h2 className="text-xl font-semibold text-gray-700 mb-4">Latest Round Summary</h2>
-
-                     {latestSummary && latestRoundInfo ? (
-                        <div className="space-y-3">
-                             <h3 className="font-semibold text-indigo-700">{latestSummary.roundName}</h3>
-                             <ul className="space-y-1 text-sm">
-                                 <li>
-                                    <span className="text-gray-600">Exact Scores:</span>
-                                    <span className="ml-2 font-bold text-green-700">{latestSummary.roundStats.exactScoresCount}</span>
-                                </li>
-                                 <li>
-                                    <span className="text-gray-600">Successful Jokers:</span>
-                                    <span className="ml-2 font-bold text-yellow-700">{latestSummary.roundStats.successfulJokersCount} ★</span>
-                                </li>
-                                {latestSummary.topScorersThisRound.length > 0 && (
-                                     <li>
-                                        <span className="text-gray-600">Top Scorer:</span>
-                                         <span className="ml-2 font-medium text-gray-800">{latestSummary.topScorersThisRound[0].name} ({latestSummary.topScorersThisRound[0].points} pts)</span>
-                                     </li>
-                                )}
-                             </ul>
-                             <div className="pt-2">
-                                <Link href={`/rounds/${latestSummary.roundId}/summary`} className="text-sm text-blue-600 hover:underline font-medium">View Full Summary →</Link>
-                             </div>
-                        </div>
-                     ) : latestRoundInfo === null && !isLoadingData ? ( // Explicitly check if fetch completed and found null
-                        <p className="text-sm text-gray-500 italic">No rounds have been completed yet.</p>
-                     ) : !isLoadingData && pageError?.includes("summary") ? ( // Show summary-specific error if relevant
-                         <p className="text-sm text-red-500 italic">Could not load latest summary data.</p>
-                     ) : (
-                         !isLoadingData && <p className="text-sm text-gray-500 italic">Latest summary is unavailable.</p> // Generic fallback
-                     )}
-                 </div>
-
-             </div> {/* End Grid */}
+                {/* Conditional Link to Round Summary */}
+                <div className="w-full sm:w-auto sm:pl-4 flex justify-end sm:self-center pt-2 sm:pt-0">
+                    {selectedRoundId && !isLoadingRounds && !roundsError && ( // Only show if a specific round ID is selected and rounds loaded ok
+                        <Link href={`/rounds/${selectedRoundId}/summary`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium px-3 py-2 rounded hover:bg-blue-50 transition-colors whitespace-nowrap">
+                            View Round Summary →
+                        </Link>
+                    )}
+                </div>
+            </div> {/* End Selection Container */}
 
 
-             {/* Bottom Links (Admin / Standings) */}
-             <div className="mt-8 pt-6 border-t border-gray-200 space-y-4">
-                  {/* Admin Area Link (Conditional) */}
-                  {user.role === 'ADMIN' && (
-                      <div className="p-4 border border-green-300 rounded bg-green-50">
-                          <h3 className="font-bold text-green-800 mb-1">Admin Area</h3>
-                          <Link href="/admin" className="text-blue-600 hover:text-blue-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded text-sm font-medium">
-                              Go to Admin Panel →
-                          </Link>
-                      </div>
-                  )}
-                  {/* Navigation Links */}
-                  {/* Example: Could add quick links here too if desired */}
-                  {/* <div className="flex gap-4">
-                        <Link href="/predictions" className="text-indigo-600 hover:underline">Make Predictions</Link>
-                        <Link href="/standings" className="text-indigo-600 hover:underline">View Standings</Link>
-                  </div> */}
-            </div>
+            {/* Standings Table Section */}
+            <h2 className="text-xl font-semibold mb-4">{tableTitle}</h2>
+            {isLoadingStandings ? (<p className="text-center p-4">Loading standings...</p>)
+            : standingsError ? (<p className="text-center p-4 text-red-600 bg-red-100 rounded">Error: {standingsError}</p>)
+            : (
+                <div className="overflow-x-auto shadow rounded border-b border-gray-200 bg-white">
+                    <table className="min-w-full divide-y divide-gray-200 table-fixed sm:table-auto">
+                        <thead className="bg-gray-100">
+                            <tr>
+                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-12 text-center">Pos</th>
+                                <th scope="col" className="py-3 px-1 md:px-2 text-xs font-medium text-gray-600 uppercase tracking-wider w-10 text-center">+/-</th>
+                                <th scope="col" className="py-3 px-2 md:px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-1/3 sm:w-auto">Name</th>
+                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-12 text-center">Pld</th>
+                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Outcome</th>
+                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Exact</th>
+                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Acc %</th>
+                                <th scope="col" className="py-3 px-2 md:px-4 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-right">Points</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {standings.length === 0 ? (
+                                <tr><td colSpan={numColumns} className="text-center py-6 px-4 text-gray-500 italic">No standings data available{selectedRoundId !== null ? ' for this round' : ''}.</td></tr>
+                            ) : (
+                                // Start mapping over standings array
+                                standings.map((item) => { // <<< Start of .map() callback function scope
 
-        </div> // End Container
+                                    // --- DEFINE itemAvatarSrc HERE ---
+                                    // Construct the full URL for *this specific item* inside the loop
+                                    const itemAvatarSrc = item.avatarUrl ? `${baseUrlForImages}${item.avatarUrl}` : null;
+                                    // ----------------------------------
+
+                                    // Return the JSX for the table row
+                                    return (
+                                        <tr key={item.userId} className="hover:bg-gray-50 transition-colors duration-150">
+                                            {/* Pos */}
+                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm font-medium text-center">{item.rank}</td>
+                                            {/* +/- */}
+                                            <td className="py-3 px-1 md:px-2 whitespace-nowrap text-sm text-center"><MovementIndicator movement={item.movement} /></td>
+
+                                            {/* Name Cell with Avatar */}
+                                            <td className="py-2 px-2 md:px-4 whitespace-nowrap text-sm text-gray-700">
+                                                <div className="flex items-center space-x-2">
+                                                    <Avatar
+                                                        fullAvatarUrl={itemAvatarSrc} // <<< Use the variable defined above
+                                                        name={item.name}       // Assumes item.name is the user's real name
+                                                        size="sm"              // w-8 h-8
+                                                    />
+                                                    {/* Display Team Name if available, otherwise fallback to actual name */}
+                                                    <span className="font-medium truncate" title={item.teamName || item.name}>
+                                                        {item.teamName || item.name}
+                                                    </span>
+                                                </div>
+                                            </td>
+
+                                            {/* Pld */}
+                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.totalPredictions}</td>
+                                            {/* Outcome */}
+                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.correctOutcomes}</td>
+                                            {/* Exact */}
+                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.exactScores}</td>
+                                            {/* Acc % */}
+                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.accuracy !== null ? `${item.accuracy.toFixed(1)}%` : '-'}</td>
+                                            {/* Points */}
+                                            <td className="py-3 px-2 md:px-4 whitespace-nowrap text-sm text-gray-900 font-semibold text-right">{item.points}</td>
+                                        </tr>
+                                    ); // <<< End of return statement for .map()
+                                }) // <<< End of .map() callback function scope
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </div> // End main container div
     );
 }

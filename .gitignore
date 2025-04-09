@@ -26,6 +26,7 @@ lerna-debug.log*
 /frontend/.env.test.local
 /frontend/.env.production.local
 /backend/.env
+uploads/
 
 # IDE directories and files
 .idea/

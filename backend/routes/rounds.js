@@ -510,57 +510,112 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
         await client.query('BEGIN'); // Start transaction
 
         // 1. --- Prerequisite Checks ---
-        const roundResult = await client.query('SELECT status FROM rounds WHERE round_id = $1 FOR UPDATE', [parsedRoundId]); // Add FOR UPDATE
+        // Check round status and lock the row
+        const roundResult = await client.query('SELECT status FROM rounds WHERE round_id = $1 FOR UPDATE', [parsedRoundId]);
         if (roundResult.rows.length === 0) {
-            await client.query('ROLLBACK'); client.release(); return res.status(404).json({ message: 'Round not found.' });
+            await client.query('ROLLBACK');
+            client.release();
+            return res.status(404).json({ message: 'Round not found.' });
         }
         const roundStatus = roundResult.rows[0].status;
         if (roundStatus !== 'CLOSED') {
-            await client.query('ROLLBACK'); client.release(); return res.status(400).json({ message: `Scoring can only be initiated for rounds with status 'CLOSED'. Current status: '${roundStatus}'.` });
+            await client.query('ROLLBACK');
+            client.release();
+            return res.status(400).json({ message: `Scoring can only be initiated for rounds with status 'CLOSED'. Current status: '${roundStatus}'.` });
         }
+
         // Check fixtures HAVE results (home_score/away_score not null)
-        const fixturesResult = await client.query( 'SELECT fixture_id, home_score, away_score FROM fixtures WHERE round_id = $1', [parsedRoundId] );
+        const fixturesResult = await client.query(
+            'SELECT fixture_id, home_score, away_score FROM fixtures WHERE round_id = $1',
+            [parsedRoundId]
+        );
+
+        // Handle case where round has no fixtures
         if (fixturesResult.rows.length === 0) {
-             console.log(`No fixtures found for round ${parsedRoundId}. Marking as COMPLETED.`);
+             console.log(`No fixtures found for round ${parsedRoundId}. Marking as COMPLETED immediately.`);
+             // Skip fetching predictions and scoring, just update round status
         } else {
+            // Check if all fixtures *that exist* have results
             const fixturesWithoutResults = fixturesResult.rows.filter( f => f.home_score === null || f.away_score === null );
             if (fixturesWithoutResults.length > 0) {
-                await client.query('ROLLBACK'); client.release(); const missingIds = fixturesWithoutResults.map(f => f.fixture_id).join(', '); return res.status(400).json({ message: `Cannot score round. Results missing for fixtures: ${missingIds}. Please enter all results first.` });
+                await client.query('ROLLBACK');
+                client.release();
+                const missingIds = fixturesWithoutResults.map(f => f.fixture_id).join(', ');
+                return res.status(400).json({ message: `Cannot score round. Results missing for fixtures: ${missingIds}. Please enter all results first.` });
             }
-        }
-        const actualResultsMap = new Map();
-        fixturesResult.rows.forEach(f => { actualResultsMap.set(f.fixture_id, { home_score: f.home_score, away_score: f.away_score }); });
 
-        // 2. --- Fetch Predictions ---
-        // Ensure points_awarded column exists in predictions table
-        const predictionsResult = await client.query( `SELECT prediction_id, user_id, fixture_id, predicted_home_goals, predicted_away_goals, is_joker FROM predictions WHERE round_id = $1`, [parsedRoundId] );
-        const predictions = predictionsResult.rows;
-        if (predictions.length === 0 && fixturesResult.rows.length > 0) {
-             console.log(`No predictions found for round ${parsedRoundId}. Marking as COMPLETED.`);
-        } else if (predictions.length > 0) {
-             // 3. --- Calculate and Update Points ---
-             const updatePromises = predictions.map(prediction => {
-                const actualResult = actualResultsMap.get(prediction.fixture_id);
-                if (!actualResult) { console.error(`Critical Error: Actual result not found for fixture ${prediction.fixture_id}. Prediction ${prediction.prediction_id} will NOT be scored.`); return Promise.resolve(); }
-                const points = calculatePoints(prediction, actualResult);
-                // Assuming 'points_awarded' is the column name in your predictions table
-                // Also update the updated_at timestamp for the prediction
-                return client.query( 'UPDATE predictions SET points_awarded = $1, updated_at = CURRENT_TIMESTAMP WHERE prediction_id = $2', [points, prediction.prediction_id] );
-             });
-             await Promise.all(updatePromises);
-        }
+            // Store actual results in a Map for quick lookup
+            const actualResultsMap = new Map();
+            fixturesResult.rows.forEach(f => {
+                actualResultsMap.set(f.fixture_id, { home_score: f.home_score, away_score: f.away_score });
+            });
+
+            // 2. --- Fetch Predictions ---
+            const predictionsResult = await client.query(
+                // Select necessary fields for scoring
+                `SELECT prediction_id, user_id, fixture_id, predicted_home_goals, predicted_away_goals, is_joker
+                 FROM predictions
+                 WHERE round_id = $1`,
+                [parsedRoundId]
+            );
+            const predictions = predictionsResult.rows;
+
+            // Handle case where round has fixtures but no predictions
+            if (predictions.length === 0) {
+                 console.log(`No predictions found for round ${parsedRoundId}, but fixtures exist. Proceeding to mark round as COMPLETED.`);
+                 // Skip scoring updates, just update round status
+            } else {
+                 // 3. --- Calculate and Update Points ---
+                 console.log(`Calculating and updating scores for ${predictions.length} predictions in round ${parsedRoundId}...`);
+                 const updatePromises = predictions.map(prediction => {
+                    const actualResult = actualResultsMap.get(prediction.fixture_id);
+                    if (!actualResult) {
+                        // This case should ideally not happen if all fixtures were checked, but good to log
+                        console.error(`Critical Error: Actual result not found for fixture ${prediction.fixture_id} during scoring. Prediction ${prediction.prediction_id} will NOT be scored.`);
+                        return Promise.resolve(); // Resolve promise to not break Promise.all, but don't update DB
+                    }
+
+                    // Calculate points using the utility function
+                    const points = calculatePoints(prediction, actualResult); // Pass prediction object and actual result
+
+                    // *** CORRECTED QUERY (removed updated_at) ***
+                    // Update only the points_awarded column for this prediction
+                    return client.query(
+                        'UPDATE predictions SET points_awarded = $1 WHERE prediction_id = $2', // <<< ONLY update points_awarded
+                        [points, prediction.prediction_id]
+                    );
+                    // *** END CORRECTION ***
+                 });
+
+                 // Wait for all prediction updates to finish
+                 await Promise.all(updatePromises);
+                 console.log(`Finished updating prediction scores for round ${parsedRoundId}.`);
+            }
+        } // End else block for checking fixtures
 
         // 4. --- Update Round Status to COMPLETED ---
-        await client.query( "UPDATE rounds SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE round_id = $1", [parsedRoundId] ); // Add updated_at
+        // Always update round status if prerequisites passed, regardless of predictions
+        console.log(`Updating round ${parsedRoundId} status to COMPLETED.`);
+        await client.query(
+            "UPDATE rounds SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE round_id = $1", // Keep updated_at for the ROUNDS table
+            [parsedRoundId]
+        );
+
         // 5. --- Commit Transaction ---
         await client.query('COMMIT');
+        console.log(`Transaction committed for scoring round ${parsedRoundId}.`);
+
         res.status(200).json({ message: `Scoring completed successfully for round ${parsedRoundId}. Status updated to COMPLETED.` });
+
     } catch (error) {
+        // Rollback transaction in case of any error during the process
         await client.query('ROLLBACK');
-        console.error(`Error scoring round ${parsedRoundId}:`, error);
-        next(error); // Use global error handler
+        console.error(`Error during scoring process for round ${parsedRoundId}:`, error);
+        next(error); // Pass error to the global error handler
     } finally {
-        client.release(); // Release client back to pool
+        // VERY IMPORTANT: Always release the client back to the pool
+        client.release();
+        console.log(`Database client released for round ${parsedRoundId} scoring.`);
     }
 });
 
