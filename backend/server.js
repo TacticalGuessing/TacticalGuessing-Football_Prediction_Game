@@ -2,7 +2,7 @@
 require('dotenv').config(); // Ensure this is at the very top
 const express = require('express');
 const cors = require('cors');
-const path = ('path');
+const path = require('path'); // <<< CORRECT way to import the path module
 // NOTE: You don't seem to be using the 'db' import directly in server.js,
 // but routers use it, so it's fine.
 // const db = require('./db');
