@@ -39,13 +39,21 @@ router.post('/login', async (req, res, next) => {
   if (!email || !password) return res.status(400).json({ message: 'Email and password required.' });
 
   try {
+    console.log(`[Login] Attempting to query DB for email: ${email}`); // <<< ADD LOG BEFORE
     const result = await db.query('SELECT * FROM users WHERE email = $1', [email]);
+    console.log('[Login] DB query completed. Rows found:', result.rows.length); // <<< ADD LOG AFTER + row coun
     const user = result.rows[0];
-    if (!user) return res.status(401).json({ message: 'Invalid credentials.' });
+    if (!user) {
+      console.log(`[Login] Failed: User not found for email: ${email}`); // Log failure reason
+      return res.status(401).json({ message: 'Invalid credentials.' });
+  }
 
-    const isMatch = await bcrypt.compare(password, user.password_hash);
+  console.log('[Login] User found. Comparing password...'); // Log next step  
+  const isMatch = await bcrypt.compare(password, user.password_hash);
+  console.log('[Login] Password comparison result:', isMatch); // Log comparison result
     if (!isMatch) return res.status(401).json({ message: 'Invalid credentials.' });
 
+    console.log('[Login] Password matched. Generating JWT...'); // Log next step
     const payload = {
       userId: user.user_id,
       email: user.email,
@@ -55,6 +63,8 @@ router.post('/login', async (req, res, next) => {
       avatarUrl: user.avatar_url // <<< ADD avatar_url FROM DB
   };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '1d' });
+    console.log('[Login] JWT generated successfully.'); // Log success
+
 
     res.status(200).json({
       message: 'Login successful!', token,
@@ -67,7 +77,11 @@ router.post('/login', async (req, res, next) => {
         avatarUrl: user.avatar_url // <<< ADD avatar_url FROM DB
     },
     });
-  } catch (err) { next(err); }
+  } catch (err) {
+    // Log the specific error encountered during the try block
+    console.error(`[Login] ERROR during login process for email ${email}:`, err); // <<< ENHANCED ERROR LOG
+    next(err); // Pass error to global error handler
+}
 });
 
 module.exports = router;

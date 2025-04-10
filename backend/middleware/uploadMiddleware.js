@@ -1,48 +1,21 @@
 // backend/middleware/uploadMiddleware.js
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const path = require('path'); // Still needed for fileFilter extension check
 
-// Define the path for avatar storage relative to this file's directory
-const avatarStoragePath = path.join(__dirname, '..', 'uploads', 'avatars');
-console.log(`[Upload Middleware] Expected avatar storage path: ${avatarStoragePath}`);
+// --- Removed local storage path and directory creation ---
+// const avatarStoragePath = path.join(__dirname, '..', 'uploads', 'avatars');
+// console.log(`[Upload Middleware] Expected avatar storage path: ${avatarStoragePath}`);
+// try { ... fs operations ... } catch (err) { ... }
+// -------------------------------------------------------
 
-// --- Ensure the directory exists ---
-// This check runs when the module is loaded (i.e., when the server starts)
-try {
-    if (!fs.existsSync(avatarStoragePath)) {
-        fs.mkdirSync(avatarStoragePath, { recursive: true });
-        console.log(`[Upload Middleware] Created directory: ${avatarStoragePath}`);
-    } else {
-        // Optional: Log if it already exists, helps confirm path resolution
-        // console.log(`[Upload Middleware] Directory already exists: ${avatarStoragePath}`);
-    }
-} catch (err) {
-    console.error(`[Upload Middleware] Error ensuring directory ${avatarStoragePath} exists:`, err);
-    // Depending on severity, you might want to throw error or exit process
-}
-// ---------------------------------
-
-// --- Configure Disk Storage ---
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        // Check if the directory exists *again* just before saving? Usually not needed,
-        // but can be a failsafe if the dir was somehow deleted after server start.
-        // if (!fs.existsSync(avatarStoragePath)) { ... handle error ... }
-        cb(null, avatarStoragePath); // Tell multer to save files here
-    },
-    filename: function (req, file, cb) {
-        // Generate a unique filename to prevent overwrites
-        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9); // Add randomness
-        const extension = path.extname(file.originalname); // Get file extension (e.g., '.jpg')
-        const newFilename = `avatar-${req.user.userId}-${uniqueSuffix}${extension}`; // Include user ID for easier tracking
-        console.log(`[Upload Middleware] Generating filename: ${newFilename}`);
-        cb(null, newFilename);
-    }
-});
+// --- Configure Memory Storage ---
+// Instead of saving to disk, keep the file data in memory as a buffer.
+// This buffer will be available at req.file.buffer in the route handler.
+const storage = multer.memoryStorage();
+console.log(`[Upload Middleware] Configured to use memoryStorage.`);
 // -------------------------------
 
-// --- File Filter (Optional but Recommended) ---
+// --- File Filter (Unchanged - Still Recommended) ---
 const fileFilter = (req, file, cb) => {
     // Accept common image formats only
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
@@ -52,8 +25,9 @@ const fileFilter = (req, file, cb) => {
     if (mimetype && extname) {
         return cb(null, true); // Accept file
     } else {
+        // Log the rejection reason
         console.warn(`[Upload Middleware] Rejected file upload for user ${req.user?.userId}: Invalid type - ${file.originalname} (MIME: ${file.mimetype})`);
-        // Pass an error to multer
+        // Provide a user-friendly error message via the callback
         cb(new Error('Invalid file type. Only JPG, PNG, GIF, WEBP images are allowed.'), false);
     }
 };
@@ -61,7 +35,7 @@ const fileFilter = (req, file, cb) => {
 
 // --- Create Multer Instance ---
 const uploadAvatar = multer({
-    storage: storage,
+    storage: storage, // Use memoryStorage instead of diskStorage
     limits: {
         fileSize: 1024 * 1024 * 5 // 5MB file size limit (adjust as needed)
     },

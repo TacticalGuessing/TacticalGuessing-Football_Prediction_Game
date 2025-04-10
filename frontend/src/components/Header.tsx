@@ -15,12 +15,7 @@ export default function Header() {
     const handleLogout = () => { logout(); };
     const isActive = (href: string) => pathname === href;
 
-    // --- Add URL construction logic ---
-    const apiBaseUrlForImages = process.env.NEXT_PUBLIC_API_BASE_URL_FOR_IMAGES || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-    const baseUrlForImages = apiBaseUrlForImages.replace(/\/api\/?$/, '').replace(/\/$/, '');
-    // --- DEFINE headerAvatarSrc HERE ---
-    const headerAvatarSrc = user?.avatarUrl ? `${baseUrlForImages}${user.avatarUrl}` : null;
-    // ---------------------------------
+    
 
     return (
         <header className="bg-gray-800 text-white shadow-md sticky top-0 z-50">
@@ -63,7 +58,7 @@ export default function Header() {
                             <div className="flex items-center space-x-2 pl-2 border-l border-gray-600"> {/* Optional separator */}
                                 {/* Display Avatar */}
                                 <Avatar
-                                    fullAvatarUrl={headerAvatarSrc}
+                                    fullAvatarUrl={user?.avatarUrl}
                                     name={user.name}
                                     size="sm" // w-8 h-8
                                     className="border border-gray-600" // Optional subtle border

@@ -119,10 +119,7 @@ export default function StandingsPage() {
         fetchStandings(newSelectedId); // Fetch new data on change
     };
 
-    // --- Base URL logic (defined once, outside map) ---
-    const apiBaseUrlForImages = process.env.NEXT_PUBLIC_API_BASE_URL_FOR_IMAGES || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'; // Ensure port matches backend
-    const baseUrlForImages = apiBaseUrlForImages.replace(/\/api\/?$/, '').replace(/\/$/, '');
-    // ----------------------------------------------------
+    
 
     // --- Render Logic ---
      if (isAuthLoading) { return <p className="p-4 text-center">Authenticating...</p>; }
@@ -205,7 +202,19 @@ export default function StandingsPage() {
 
                                     // --- DEFINE itemAvatarSrc HERE ---
                                     // Construct the full URL for *this specific item* inside the loop
-                                    const itemAvatarSrc = item.avatarUrl ? `${baseUrlForImages}${item.avatarUrl}` : null;
+                                    let itemAvatarSrc: string | null = null;
+if (item.avatarUrl) {
+    if (item.avatarUrl.startsWith('http://') || item.avatarUrl.startsWith('https://')) {
+        itemAvatarSrc = item.avatarUrl; // Use absolute URL directly
+    } else {
+        // This case should ideally not happen anymore if all avatars are from Cloudinary.
+        // If you still had old relative URLs (/uploads/...) you might prepend here,
+        // but it's better to ensure data consistency. Log a warning for now.
+        console.warn(`Standings page received unexpected relative avatarUrl: ${item.avatarUrl}`);
+        // Optionally prepend baseUrlForImages if needed for legacy paths:
+        // itemAvatarSrc = `${baseUrlForImages}${item.avatarUrl}`;
+    }
+}
                                     // ----------------------------------
 
                                     // Return the JSX for the table row

@@ -3,12 +3,40 @@ const express = require('express');
 const { PrismaClient } = require('@prisma/client');
 const { protect } = require('../middleware/authMiddleware'); // Only need 'protect'
 const { uploadAvatar } = require('../middleware/uploadMiddleware'); // <<< ADD THIS
-const fs = require('fs'); // <<< ADD THIS
-const path = require('path'); // <<< ADD THIS
-const multer = require('multer');
+const asyncHandler = require('express-async-handler');
 
 const prisma = new PrismaClient();
 const router = express.Router();
+
+// --- Add Cloudinary Configuration ---
+const cloudinary = require('cloudinary').v2;
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET,
+    // secure: true // Optional: defaults to true, ensures https URLs
+});
+// ------------------------------------
+
+// Function to upload buffer stream to Cloudinary
+const uploadToCloudinary = (buffer) => {
+    return new Promise((resolve, reject) => {
+        const uploadStream = cloudinary.uploader.upload_stream(
+            { resource_type: 'image', folder: 'fp_avatars' }, // Optional: organize uploads in Cloudinary
+            (error, result) => {
+                if (error) {
+                    console.error("Cloudinary Upload Error:", error);
+                    reject(error);
+                } else {
+                    resolve(result);
+                }
+            }
+        );
+        // Pipe the buffer into the upload stream
+        uploadStream.end(buffer);
+    });
+};
 
 // Apply 'protect' middleware to all routes in this file
 router.use(protect);
@@ -79,115 +107,78 @@ router.post('/profile/team-name', async (req, res, next) => {
  * @desc    Upload or update the logged-in user's avatar image
  * @access  Private (Protected)
  */
+// --- NEW VERSION (Using Cloudinary) ---
 router.post(
     '/profile/avatar',
-    (req, res, next) => { // Add intermediate handler for logging/debugging multer errors if needed
-        uploadAvatar.single('avatar')(req, res, (err) => {
-            if (err instanceof multer.MulterError) {
-                // A Multer error occurred when uploading (e.g., file size limit)
-                console.error(`[Multer Error] User ${req.user?.userId}:`, err.message);
-                return res.status(400).json({ message: `Upload Error: ${err.message}` });
-            } else if (err) {
-                // An unknown error occurred (e.g., our custom fileFilter error)
-                console.error(`[File Filter Error] User ${req.user?.userId}:`, err.message);
-                 // Handle the specific file type error message from our filter
-                 if (err.message.startsWith('Invalid file type')) {
-                    return res.status(400).json({ message: err.message });
-                 }
-                return res.status(500).json({ message: 'An unexpected error occurred during file upload.' });
-            }
-            // If no errors, proceed to the main route handler
-            console.log(`[Upload Middleware] File processed successfully for user ${req.user?.userId}`);
-            next();
-        });
-    },
-    async (req, res, next) => {
+    protect, // Ensure user is logged in
+    uploadAvatar.single('avatar'), // Use Multer middleware (now using memoryStorage)
+    asyncHandler(async (req, res) => {
+        if (!req.file) {
+            res.status(400);
+            throw new Error('Please upload an image file.');
+        }
+        if (!req.file.buffer) {
+             res.status(500);
+             throw new Error('File buffer is missing after upload.');
+        }
+
         const userId = req.user.userId;
 
-        // 1. Check if a file was uploaded
-        if (!req.file) {
-            console.warn(`[Avatar Upload] User ${userId}: No file uploaded.`);
-            return res.status(400).json({ message: 'No file uploaded. Please select an image.' });
-        }
-
-        console.log(`[Avatar Upload] User ${userId}: Received file - ${req.file.filename}`);
-
-        // 2. Construct the URL path for the new avatar
-        // We store the relative path, assuming the frontend knows the base URL
-        const newAvatarPath = `/uploads/avatars/${req.file.filename}`;
-        console.log(`[Avatar Upload] User ${userId}: New avatar path - ${newAvatarPath}`);
-
-
         try {
-            // --- Optional: Delete Old Avatar ---
-            const user = await prisma.user.findUnique({
-                where: { userId: userId },
-                select: { avatarUrl: true } // Only fetch the old URL
-            });
+            console.log(`[Avatar Upload] User ${userId}: Uploading image to Cloudinary...`);
+            // --- Cloudinary Upload ---
+            const cloudinaryResult = await uploadToCloudinary(req.file.buffer);
 
-            if (user?.avatarUrl) {
-                // Check if the old URL points to a local upload
-                if (user.avatarUrl.startsWith('/uploads/avatars/')) {
-                    const oldFilename = path.basename(user.avatarUrl); // Get filename from path
-                    const oldFilePath = path.join(__dirname, '..', 'uploads', 'avatars', oldFilename);
-                    console.log(`[Avatar Upload] User ${userId}: Attempting to delete old avatar: ${oldFilePath}`);
-
-                    // Check if file exists before attempting delete
-                    if (fs.existsSync(oldFilePath)) {
-                        fs.unlink(oldFilePath, (err) => {
-                            if (err) {
-                                // Log error but don't stop the update process
-                                console.error(`[Avatar Upload] User ${userId}: Failed to delete old avatar ${oldFilePath}:`, err);
-                            } else {
-                                console.log(`[Avatar Upload] User ${userId}: Successfully deleted old avatar: ${oldFilePath}`);
-                            }
-                        });
-                    } else {
-                         console.warn(`[Avatar Upload] User ${userId}: Old avatar file not found, skipping deletion: ${oldFilePath}`);
-                    }
-                } else {
-                     console.log(`[Avatar Upload] User ${userId}: Old avatar URL is not a local upload, skipping deletion: ${user.avatarUrl}`);
-                }
+            if (!cloudinaryResult || !cloudinaryResult.secure_url) {
+                 res.status(500);
+                 throw new Error('Cloudinary upload failed, no secure URL returned.');
             }
-            // ---------------------------------
 
-            // 3. Update user record in the database
+            const newAvatarUrl = cloudinaryResult.secure_url; // Get the HTTPS URL
+            console.log(`[Avatar Upload] User ${userId}: Cloudinary upload successful. URL: ${newAvatarUrl}`);
+            // --- End Cloudinary Upload ---
+
+            // --- Remove Old File Deletion Logic ---
+            // No longer needed as we don't store local paths or files.
+            // Cloudinary can be configured to overwrite files with the same public_id
+            // or manage versions, but simple replacement is fine for now.
+            // ------------------------------------
+
+            // --- Update Database ---
             const updatedUser = await prisma.user.update({
                 where: { userId: userId },
-                data: {
-                    avatarUrl: newAvatarPath // Store the relative path
-                },
-                select: { // Return updated user info (adjust as needed by frontend)
+                data: { avatarUrl: newAvatarUrl }, // Store the FULL Cloudinary URL
+                select: { // Select fields needed by frontend Auth context / profile page
                     userId: true,
-                    name: true,
                     email: true,
-                    role: true,
                     teamName: true,
-                    avatarUrl: true // Include the new avatar URL
-                }
+                    avatarUrl: true, // Get the updated URL back
+                    // Include roles or other fields if needed by the frontend context
+                },
             });
+            console.log(`[Avatar Upload] User ${userId}: Database updated successfully.`);
+            // --- End Update Database ---
 
-            console.log(`[Avatar Upload] User ${userId}: Successfully updated avatar URL in DB.`);
-            // 4. Return success response with updated user data
-            res.status(200).json(updatedUser);
+            // --- Send Response ---
+            // Map DB field to API field (snake_case to camelCase for frontend)
+            res.status(200).json({
+                 userId: updatedUser.userId,
+                 email: updatedUser.email,
+                 teamName: updatedUser.teamName,
+                 avatarUrl: updatedUser.avatarUrl // API uses camelCase
+            });
+            // --- End Send Response ---
 
         } catch (error) {
-            console.error(`[Avatar Upload] User ${userId}: Error updating avatar in DB:`, error);
-            // Cleanup: If DB update fails, attempt to delete the newly uploaded file
-            const uploadedFilePath = path.join(__dirname, '..', 'uploads', 'avatars', req.file.filename);
-            if (fs.existsSync(uploadedFilePath)) {
-                fs.unlink(uploadedFilePath, (delErr) => {
-                    if(delErr) console.error(`[Avatar Upload Cleanup] User ${userId}: Failed to delete orphaned file ${uploadedFilePath}:`, delErr);
-                    else console.log(`[Avatar Upload Cleanup] User ${userId}: Deleted orphaned file ${uploadedFilePath} after DB error.`);
-                });
-            }
-
-             if (error.code === 'P2025') { // Record not found (unlikely due to 'protect', but good practice)
-                return res.status(404).json({ message: 'User not found.' });
-            }
-            next(error); // Pass to global error handler
+            console.error(`[Avatar Upload] Error during avatar upload for user ${userId}:`, error);
+            // Don't throw the raw error, send a generic message
+            // Ensure express-async-handler or your global error handler catches this
+             res.status(500);
+             throw new Error('Failed to upload avatar. Please try again.');
+             // Or if not using asyncHandler:
+             // res.status(500).json({ message: 'Failed to upload avatar. Please try again.' });
         }
-    }
+    })
 );
 
 
