@@ -14,7 +14,7 @@ model User {
   name          String
   email         String    @unique
   passwordHash  String    @map("password_hash")
-  role          String    @default("PLAYER")
+  role          String    @default("VISITOR")
   teamName      String?   @map("team_name")
   avatarUrl     String?   @map("avatar_url") // Future placeholder
   createdAt     DateTime  @default(now()) @map("created_at")

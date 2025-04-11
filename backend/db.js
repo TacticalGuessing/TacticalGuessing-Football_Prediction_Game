@@ -1,20 +1,30 @@
 // backend/db.js
 const { Pool } = require('pg');
 // dotenv should be configured in the main entry point (server.js) before this file is required.
-// require('dotenv').config(); // Usually not needed here if done in server.js
+
+// --- Determine if the connection is likely to a cloud database requiring SSL ---
+// Checks if the DATABASE_URL environment variable exists and contains common cloud provider hostnames.
+const isCloudDb = process.env.DATABASE_URL && (
+    process.env.DATABASE_URL.includes('.render.com') ||
+    process.env.DATABASE_URL.includes('.supabase.co') ||
+    process.env.DATABASE_URL.includes('.neon.tech') ||
+    process.env.DATABASE_URL.includes('sslmode=require') // Also check if sslmode is explicitly required
+    // Add other cloud provider indicators if necessary
+);
+// --- End Cloud DB Check ---
 
 // --- Configuration prioritizes DATABASE_URL ---
 const poolConfig = {
     // Use connection string from environment variable if available
     connectionString: process.env.DATABASE_URL,
 
-    // --- Explicit SSL Configuration ---
-    // Assume SSL is REQUIRED if DATABASE_URL is set (typical for cloud DBs like Render)
-    // Use rejectUnauthorized: false for default certs common in cloud providers' free tiers.
-    ssl: process.env.DATABASE_URL
-         ? { rejectUnauthorized: false } // Enable SSL for cloud connections
-         : undefined,                   // Disable SSL if DATABASE_URL is missing (assume local non-SSL)
-    // --- End SSL Configuration ---
+    // --- Modified SSL Configuration ---
+    // Enable SSL with rejectUnauthorized: false ONLY if isCloudDb is true.
+    // Otherwise, leave SSL undefined (effectively disabled) for local connections.
+    ssl: isCloudDb
+         ? { rejectUnauthorized: false }
+         : undefined,
+    // --- End Modified SSL Configuration ---
 
     // Fallback to individual variables ONLY if connectionString is NOT provided
     // (Less likely to be used when DATABASE_URL is correctly set in the environment)
@@ -32,20 +42,20 @@ const poolConfig = {
 
 // Log the effective connection target (mask password for security)
 const logTarget = process.env.DATABASE_URL
-    ? process.env.DATABASE_URL.replace(/:([^:@\/]+)@/, ':<password>@')
-    : `${poolConfig.host || 'localhost'}:${poolConfig.port || 5432}/${poolConfig.database || 'default_db'}`; // Add fallbacks for logging
+    ? process.env.DATABASE_URL.replace(/:([^:@\/]+)@/, ':<password>@') // Mask password
+    : `${poolConfig.host || 'localhost'}:${poolConfig.port || 5432}/${poolConfig.database || 'default_db'}`; // Fallback for logging
 console.log(`[db.js] Attempting to connect pool to: ${logTarget}`);
-// Log the SSL configuration being used
-console.log(`[db.js] SSL Configuration:`, poolConfig.ssl);
+// Log the SSL configuration being used AFTER determining if it's cloud/local
+console.log(`[db.js] SSL Configuration determined:`, poolConfig.ssl);
 
-// Create the pool instance
+// Create the pool instance with the configured options
 const pool = new Pool(poolConfig);
 
 // Event listener for successful client connection within the pool
 pool.on('connect', (client) => {
     const params = client.connectionParameters;
-    console.log(`[db.js] Pool client connected to ${params.host}:${params.port}/${params.database}`);
-    // client.on('error', err => console.error('[db.js] Error on connected client:', err)); // Optional: Log errors on specific clients
+    console.log(`[db.js] Pool client connected to ${params.host}:${params.port}/${params.database}. SSL Active: ${client.ssl ? 'Yes' : 'No'}`); // Log SSL status
+    // client.on('error', err => console.error('[db.js] Error on connected client:', err));
 });
 
 // Event listener for errors occurring on idle clients in the pool
@@ -63,18 +73,10 @@ module.exports = {
      * @returns {Promise<QueryResult<any>>} A promise that resolves with the query result.
      */
     query: (text, params) => {
-        // Removed verbose query logging for production, uncomment if needed for debugging
-        // const start = Date.now();
-        // console.log('[db.js] Executing query:', { text, params: params?.length });
         return pool.query(text, params)
-            // .then(res => {
-            //     const duration = Date.now() - start;
-            //     console.log('[db.js] Query executed:', { text, duration: `${duration}ms`, rows: res.rowCount });
-            //     return res;
-            // })
             .catch(err => {
                 // Log errors during query execution
-                console.error('[db.js] ERROR executing query:', { text }, err); // Log text but maybe not params in prod
+                console.error('[db.js] ERROR executing query:', { text }, err); // Avoid logging params in production if sensitive
                 throw err; // Re-throw the error so the calling route handler can catch it
             });
     },

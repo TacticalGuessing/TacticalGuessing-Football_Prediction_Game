@@ -49,6 +49,15 @@ router.use(protect);
  * @access  Private (Protected)
  */
 router.post('/profile/team-name', async (req, res, next) => {
+
+    if (req.user.role === 'VISITOR') {
+        res.status(403); // Forbidden
+        // Use 'next' for consistency if using global error handler, otherwise throw new Error
+        return next(new Error('Visitors cannot set a team name.'));
+        // OR: throw new Error('Visitors cannot set a team name.');
+    }
+    // <<< --- END ROLE CHECK --- >>>
+
     const userId = req.user.userId;
     const { teamName } = req.body; // Expecting { teamName: "New Team Name" }
 
@@ -110,9 +119,19 @@ router.post('/profile/team-name', async (req, res, next) => {
 // --- NEW VERSION (Using Cloudinary) ---
 router.post(
     '/profile/avatar',
-    protect, // Ensure user is logged in
+    
     uploadAvatar.single('avatar'), // Use Multer middleware (now using memoryStorage)
     asyncHandler(async (req, res) => {
+
+        // <<< --- ADD ROLE CHECK HERE --- >>>
+        if (req.user.role === 'VISITOR') {
+            res.status(403); // Forbidden
+            // Use 'next' if using global error handler and asyncHandler
+            return next(new Error('Visitors cannot upload an avatar.'));
+            // OR: throw new Error('Visitors cannot upload an avatar.');
+        }
+        // <<< --- END ROLE CHECK --- >>>
+
         if (!req.file) {
             res.status(400);
             throw new Error('Please upload an image file.');

@@ -7,6 +7,7 @@ import { toast } from 'react-hot-toast';
 import { setTeamName, uploadAvatar, ApiError } from '@/lib/api'; // Import both API functions and ApiError
 import Image from 'next/image';
 import { FaUserCircle } from 'react-icons/fa'; // Default icon
+import { useRouter } from 'next/navigation';
 
 // Example Spinner component (replace with your actual implementation if you have one)
 const Spinner = () => (
@@ -18,8 +19,20 @@ const Spinner = () => (
 
 
 export default function ProfileSettingsPage() {
-    // Get context data using the hook
+    // --- Authentication and Router Hooks ---
     const { user, token, isLoading: isAuthLoading, updateUserContext } = useAuth();
+    const router = useRouter(); // Get router instance
+
+    // --- Role Check and Redirect Effect ---
+    useEffect(() => {
+        // Redirect if loading is finished and user is a VISITOR
+        if (!isAuthLoading && user && user.role === 'VISITOR') {
+            console.log('[SettingsPage] Visitor detected, redirecting to dashboard.');
+            toast.error("Visitors cannot access profile settings."); // Optional feedback
+            router.replace('/dashboard'); // Redirect away
+        }
+    }, [user, isAuthLoading, router]);
+    // --- End Role Check ---
 
     // State for Team Name
     const [teamNameInput, setTeamNameInput] = useState<string>('');

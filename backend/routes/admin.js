@@ -1,6 +1,7 @@
 // backend/routes/admin.js
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, Prisma } = require('@prisma/client'); // Add Prisma here
+const asyncHandler = require('express-async-handler'); // Add asyncHandler
 const { protect, admin } = require('../middleware/authMiddleware'); // Import middleware
 
 const prisma = new PrismaClient();
@@ -30,7 +31,9 @@ router.get('/users', async (req, res, next) => {
         const users = await prisma.user.findMany({
             select: {
                 userId: true, // Select model field name (camelCase)
-                name: true    // Select model field name
+                name: true,    // Select model field name
+                email: true,
+                role: true
             },
             orderBy: {
                 name: 'asc' // Order alphabetically by name
@@ -135,5 +138,81 @@ router.get('/users/:userId/predictions/:roundId', async (req, res, next) => {
     }
 });
 // --- END NEW ROUTE ---
+
+// --- NEW: Update User Role Endpoint ---
+/**
+ * @route   PATCH /api/admin/users/:userId/role
+ * @desc    Update a user's role (PLAYER or VISITOR)
+ * @access  Admin
+ */
+router.patch('/users/:userId/role', protect, asyncHandler(async (req, res) => {
+    // 1. Authorization: Ensure only Admins can perform this
+    if (req.user.role !== 'ADMIN') {
+        res.status(403); // Forbidden
+        throw new Error('Not authorized to change user roles.');
+    }
+
+    // 2. Get userId from path parameters
+    const userIdToUpdate = parseInt(req.params.userId, 10);
+    if (isNaN(userIdToUpdate)) {
+         res.status(400);
+         throw new Error('Invalid user ID provided.');
+    }
+
+    // 3. Get new role from request body and validate
+    const { role: newRole } = req.body;
+    const validRoles = ['PLAYER', 'VISITOR']; // Only allow changing to these roles
+
+    if (!newRole || typeof newRole !== 'string' || !validRoles.includes(newRole.toUpperCase())) {
+        res.status(400);
+        throw new Error(`Invalid role provided. Must be one of: ${validRoles.join(', ')}.`);
+    }
+
+    // 4. Prevent admin from changing their own role or another admin's role via this endpoint (optional safety)
+    if (userIdToUpdate === req.user.userId) {
+         res.status(400);
+         throw new Error('Admins cannot change their own role via this endpoint.');
+    }
+
+     // Optional: Check if target user is also an Admin
+     const targetUser = await prisma.user.findUnique({ where: { userId: userIdToUpdate }, select: { role: true }});
+     if (!targetUser) {
+         res.status(404);
+         throw new Error('User not found.');
+     }
+     if (targetUser.role === 'ADMIN') {
+          res.status(400);
+          throw new Error('Cannot change the role of another Admin via this endpoint.');
+     }
+
+
+    // 5. Update the user's role in the database
+    try {
+        const updatedUser = await prisma.user.update({
+            where: { userId: userIdToUpdate },
+            data: { role: newRole.toUpperCase() }, // Ensure role is saved in uppercase if needed by checks
+            select: { // Return relevant fields
+                userId: true,
+                name: true,
+                email: true,
+                role: true,
+                teamName: true,
+                avatarUrl: true
+            }
+        });
+        console.log(`Admin ${req.user.userId} updated role for user ${userIdToUpdate} to ${newRole.toUpperCase()}`);
+        res.status(200).json(updatedUser);
+
+    } catch (error) {
+        console.error(`Error updating role for user ${userIdToUpdate}:`, error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+             res.status(404); // Record not found (might happen if deleted between check and update)
+             throw new Error('User not found.');
+        }
+        // Re-throw other errors for global handler
+        throw error;
+    }
+}));
+// --- END NEW Endpoint ---
 
 module.exports = router;

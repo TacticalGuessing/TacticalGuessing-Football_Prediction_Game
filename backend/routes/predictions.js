@@ -27,7 +27,7 @@ router.post('/random', protect, async (req, res, next) => {
     }
 
     // *** ADD THIS ROLE CHECK ***
-    if (req.user.role === 'ADMIN') {
+    if (req.user.role !== 'PLAYER') {
         console.warn(`[${new Date().toISOString()}] Admin user ${userId} forbidden attempt POST /predictions/random`);
         return res.status(403).json({ message: 'Forbidden: Admins cannot submit predictions.' });
     }
@@ -142,7 +142,7 @@ router.post('/', protect, async (req, res, next) => {
     if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
 
     // *** ADD THIS ROLE CHECK ***
-    if (req.user.role === 'ADMIN') {
+    if (req.user.role !== 'PLAYER') {
         console.warn(`[${new Date().toISOString()}] Admin user ${userId} forbidden attempt POST /predictions`);
         return res.status(403).json({ message: 'Forbidden: Admins cannot submit predictions.' });
     }
@@ -277,6 +277,13 @@ router.get('/points/:roundId', protect, async (req, res, next) => {
     if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
     const roundId = parseInt(roundIdParam, 10);
     if (isNaN(roundId)) { return res.status(400).json({ message: 'Invalid Round ID.' }); }
+
+    // <<< --- ADD ROLE CHECK HERE --- >>>
+    if (req.user.role === 'VISITOR') {
+        res.status(403); // Forbidden
+        throw new Error('Visitors cannot view points breakdowns.');
+    }
+    // <<< --- END ROLE CHECK --- >>>
 
     try {
         // Verify Round exists and is COMPLETED

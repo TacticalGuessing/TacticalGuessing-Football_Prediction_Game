@@ -23,9 +23,44 @@ export interface User {
     userId: number;
     name: string;
     email: string;
-    role: 'PLAYER' | 'ADMIN';
+    role: 'PLAYER' | 'ADMIN' | 'VISITOR';
     teamName?: string | null;
     avatarUrl?: string | null; // <<< ADD THIS LINE
+}
+
+
+// Function to fetch all users for Admin panel
+export async function getAllUsersForAdmin(token: string): Promise<User[]> {
+    console.log('[api.ts] Calling getAllUsersForAdmin: /admin/users');
+    // Corrected Call: Pass options THEN token
+    const response = await fetchWithAuth('/admin/users', { method: 'GET' }, token);
+    // Check if response is ok before parsing JSON
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+        throw new ApiError(errorData?.message || `Request failed with status ${response.status}`, response.status);
+    }
+    const data = await response.json();
+    return data as User[];
+}
+
+// DELETE THE DUPLICATE getAllUsersForAdmin function HERE
+
+// Function for Admin to update a user's role
+export async function updateUserRoleAdmin(userId: number, newRole: 'PLAYER' | 'VISITOR', token: string): Promise<User> {
+    console.log(`[api.ts] Calling updateUserRoleAdmin for user ${userId} to ${newRole}`);
+    // Corrected Call: Pass options THEN token
+    const response = await fetchWithAuth(`/admin/users/${userId}/role`, {
+        method: 'PATCH',
+        // fetchWithAuth likely handles Content-Type for JSON body passed below
+        body: { role: newRole } // Pass JS object, fetchWithAuth should stringify
+    }, token);
+    // Check if response is ok before parsing JSON
+     if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
+        throw new ApiError(errorData?.message || `Request failed with status ${response.status}`, response.status);
+    }
+    const data = await response.json();
+    return data as User;
 }
 
 export interface AuthResponse {

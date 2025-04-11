@@ -455,7 +455,7 @@ router.post('/:roundId/fixtures', protect, admin, async (req, res, next) => {
 
 
 // GET /api/rounds/:roundId/fixtures - Get all fixtures for a specific round (Admin access)
-router.get('/:roundId/fixtures', protect, admin, async (req, res, next) => {
+router.get('/:roundId/fixtures', protect, async (req, res, next) => {
     const { roundId } = req.params;
     const parsedRoundId = parseInt(roundId, 10);
 

@@ -233,6 +233,12 @@ export default function AdminRoundsPage() {
                  </div>
                  {/* === END NEW SECTION === */}
 
+                 {/* --- ADD THIS LINK --- */}
+                 <li>
+                        <Link href="/admin/users" className="text-blue-600 hover:underline">Manage Users</Link>
+                    </li>
+                    {/* --- END ADD LINK --- */}
+
             </div> {/* End Grid */}
 
 

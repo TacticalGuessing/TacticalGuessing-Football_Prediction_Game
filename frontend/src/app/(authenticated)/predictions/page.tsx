@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, FormEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { getActiveRound, savePredictions, generateRandomUserPredictions, ActiveRoundResponse, PredictionPayload, ApiError } from '@/lib/api'; // Import necessary functions and types
 import { toast } from 'react-hot-toast';
+import { useRouter } from 'next/navigation';
 //import CountdownTimer from '@/components/CountdownTimer'; // Assuming you have this component
 // Import other necessary components like Spinner, etc.
 
@@ -15,7 +16,19 @@ interface PredictionInput extends PredictionPayload {
 }
 
 export default function PredictionsPage() {
-    const { token, isLoading: isAuthLoading } = useAuth();
+    // --- Authentication and Router Hooks ---
+    const { user, token, isLoading: isAuthLoading } = useAuth(); // Get user object including role
+    const router = useRouter(); // Get router instance
+
+    // --- Role Check and Redirect Effect ---
+    useEffect(() => {
+        // Redirect if loading is finished and user is a VISITOR
+        if (!isAuthLoading && user && user.role === 'VISITOR') {
+            console.log('[PredictionsPage] Visitor detected, redirecting to dashboard.');
+            toast.error("Visitors cannot access the predictions page."); // Optional feedback
+            router.replace('/dashboard'); // Redirect away
+        }
+    }, [user, isAuthLoading, router]);
 
     // State for active round data
     const [activeRound, setActiveRound] = useState<ActiveRoundResponse | null>(null);
