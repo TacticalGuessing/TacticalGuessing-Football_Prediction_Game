@@ -1,263 +1,192 @@
-// frontend/src/app/(authenticated)/standings/page.tsx
+// frontend/src/app/(authenticated)/dashboard/page.tsx
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
-// Ensure StandingEntry interface includes avatarUrl and teamName (optional)
-import { getStandings, getCompletedRounds, SimpleRound, StandingEntry } from '@/lib/api';
+// --- Imports ---
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import MovementIndicator from '@/components/Standings/MovementIndicator';
-import Avatar from '@/components/Avatar'; // <<< Ensure this import is present
+import Link from 'next/link';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/Table'; // Keep all Table imports
+import { FaRegCalendarAlt, FaTrophy, FaStar, FaNewspaper, FaArrowRight } from 'react-icons/fa';
+import MovementIndicator from '@/components/Standings/MovementIndicator'; // Keep MovementIndicator import
+import { getActiveRound, getStandings, ActiveRoundResponse, StandingEntry } from '@/lib/api'; // Removed ApiError, ensure StandingEntry includes needed fields
+import { formatDateTime } from '@/utils/formatters';
+import Spinner from '@/components/ui/Spinner';
+import { clsx } from 'clsx';
+import Avatar from '@/components/Avatar'; // Keep Avatar import
 
-export default function StandingsPage() {
-    const renderCount = useRef(0);
-    useEffect(() => {
-      renderCount.current += 1;
-      // console.log(`%cStandingsPage Render #${renderCount.current}`, 'color: blue; font-weight: bold;'); // Keep for debugging if needed
-    });
+// --- Styling ---
+const sectionContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700 p-4 md:p-6";
 
-    const { token, isLoading: isAuthLoading } = useAuth();
+export default function DashboardPage() {
+    const { user, token, isLoading: isAuthLoading } = useAuth();
 
-    // State
-    const [rounds, setRounds] = useState<SimpleRound[]>([]);
-    const [selectedRoundId, setSelectedRoundId] = useState<string | null>(null); // null for Overall
-    const [isLoadingRounds, setIsLoadingRounds] = useState(true);
-    const [roundsError, setRoundsError] = useState<string | null>(null);
-    const [standings, setStandings] = useState<StandingEntry[]>([]); // Type should include avatarUrl/teamName
+    // --- State ---
+    const [activeRound, setActiveRound] = useState<ActiveRoundResponse | null>(null);
+    const [isLoadingRound, setIsLoadingRound] = useState(true);
+    const [roundError, setRoundError] = useState<string | null>(null);
+    const [isDeadlinePassed, setIsDeadlinePassed] = useState(false);
+    const [standings, setStandings] = useState<StandingEntry[]>([]);
     const [isLoadingStandings, setIsLoadingStandings] = useState(true);
     const [standingsError, setStandingsError] = useState<string | null>(null);
-    const [tableTitle, setTableTitle] = useState('Overall Standings');
 
-    // Logging
-    // console.log(`%cCALLBACK DEPS: Token defined: ${!!token}`, 'color: gray');
-
-    // Fetch Completed Rounds
-    const fetchCompletedRounds = useCallback(async () => {
-        // console.log('%cRunning fetchCompletedRounds...', 'color: green;');
-        if (!token) { /* console.log('%cfetchCompletedRounds: No token, returning.', 'color: orange;'); */ return; }
-        setIsLoadingRounds(true); setRoundsError(null);
+    // --- Fetch Active Round Data ---
+    const fetchActiveRound = useCallback(async () => {
+        if (!token) { setIsLoadingRound(false); return; }
+        setIsLoadingRound(true); setRoundError(null); setActiveRound(null);
         try {
-            const completedRoundsData = await getCompletedRounds(token);
-            // console.log('%cfetchCompletedRounds: SUCCESS', 'color: green;', completedRoundsData);
-            setRounds(completedRoundsData || []);
-        } catch (err: unknown) {
-            console.error("fetchCompletedRounds: ERROR:", err);
-            const message = (err instanceof Error) ? err.message : 'Failed to load rounds.';
-            setRoundsError(message); setRounds([]);
-        } finally { setIsLoadingRounds(false); }
+            const data = await getActiveRound(token);
+            setActiveRound(data);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to load round data.";
+            setRoundError(message); console.error("[Dashboard] Error fetching active round:", err);
+        } finally { setIsLoadingRound(false); }
     }, [token]);
 
-    // Fetch Standings
-    const fetchStandings = useCallback(async (roundIdStr: string | null) => {
-        // console.log(`%cRunning fetchStandings for roundIdStr: ${roundIdStr}...`, 'color: purple;');
-        if (!token) {
-            // console.log('%cfetchStandings: No token, returning.', 'color: orange;');
-            setStandingsError("Authentication required."); setStandings([]); setIsLoadingStandings(false); return;
-        }
-        let roundIdNum: number | undefined = undefined; // Use undefined for overall
-        if (roundIdStr !== null) {
-            const parsed = parseInt(roundIdStr, 10);
-            if (isNaN(parsed)) {
-                // console.log(`%cfetchStandings: Invalid roundIdStr ${roundIdStr}`, 'color: red;');
-                setStandingsError("Invalid round selected."); setStandings([]); setIsLoadingStandings(false); return;
-            }
-            roundIdNum = parsed;
-        }
-        setIsLoadingStandings(true); setStandingsError(null);
+    // --- Fetch Overall Standings Data ---
+    const fetchStandingsData = useCallback(async () => {
+        if (!token) { setIsLoadingStandings(false); return; }
+        setIsLoadingStandings(true); setStandingsError(null); setStandings([]);
         try {
-            const data: StandingEntry[] = await getStandings(token, roundIdNum);
-            // console.log(`%cfetchStandings: SUCCESS for ${roundIdNum ?? 'overall'}`, 'color: purple;', data);
-            setStandings(data || []);
-        } catch (err: unknown) {
-            console.error(`fetchStandings: ERROR for ${roundIdNum ?? 'overall'}:`, err);
-            const message = (err instanceof Error) ? err.message : 'Failed to fetch standings.';
-            setStandingsError(message); setStandings([]);
+            const data = await getStandings(token);
+            setStandings((data || []).slice(0, 10)); // Get Top 5
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to load standings.";
+            setStandingsError(message); console.error("[Dashboard] Error fetching standings:", err);
         } finally { setIsLoadingStandings(false); }
     }, [token]);
 
-    // Initial Effects
+
+    // --- Fetch Data on Mount/Token Change ---
     useEffect(() => {
-        // console.log('%cRunning Initial useEffect...', 'color: brown;', { isAuthLoading, hasToken: !!token });
-        if (!isAuthLoading && token) {
-            // console.log('%cInitial useEffect: Conditions met, calling fetches.', 'color: brown;');
-            fetchCompletedRounds();
-            fetchStandings(null); // Fetch overall initially
-        } else if (!isAuthLoading && !token) {
-            // console.log('%cInitial useEffect: No token after loading.', 'color: brown;');
-            setIsLoadingRounds(false); setIsLoadingStandings(false);
-            setRoundsError("Authentication required to load data."); setStandingsError("Authentication required to load data.");
-            setRounds([]); setStandings([]);
+        if (token && !isAuthLoading) {
+            fetchActiveRound();
+            fetchStandingsData();
+        } else if (!token && !isAuthLoading) {
+             setIsLoadingRound(false); setIsLoadingStandings(false);
         }
-    }, [token, isAuthLoading, fetchCompletedRounds, fetchStandings]);
+    }, [token, isAuthLoading, fetchActiveRound, fetchStandingsData]);
 
-    // Effect for Setting Table Title
+    // --- Deadline Check Effect ---
     useEffect(() => {
-        // console.log('%cRunning Title useEffect...', 'color: teal;', { selectedRoundId, roundsCount: rounds?.length, isLoadingStandings, standingsError, currentTitle: tableTitle });
-        let newTitle = tableTitle;
-        if (isLoadingStandings) { return; } // Don't update if loading
-        else if (standingsError) { newTitle = `Error Loading Standings`; } // Simplified error title
-        else {
-            if (selectedRoundId !== null) {
-                const roundName = rounds.find(r => r.roundId.toString() === selectedRoundId)?.name;
-                newTitle = (roundName ? `${roundName} Standings` : `Round ${selectedRoundId} Standings`);
-            } else {
-                newTitle = ('Overall Standings');
-            }
-        }
-        if (newTitle !== tableTitle) {
-            // console.log('%cTitle useEffect: Setting title to:', newTitle, 'color: teal;');
-            setTableTitle(newTitle);
-        }
-    }, [selectedRoundId, rounds, isLoadingStandings, standingsError, tableTitle]);
+        if (activeRound?.deadline) {
+            const checkDeadline = () => {
+                try { setIsDeadlinePassed(new Date() >= new Date(activeRound.deadline)); }
+                // Use _e to indicate the error variable is intentionally unused here
+                catch (_e) { setIsDeadlinePassed(false); console.error("Error parsing deadline:", _e); }
+            };
+            checkDeadline(); const timerId = setInterval(checkDeadline, 30000);
+            return () => clearInterval(timerId);
+        } else { setIsDeadlinePassed(false); }
+    }, [activeRound?.deadline]);
 
-    // Handle dropdown change
-    const handleRoundChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
-        const newRoundIdValue = event.target.value;
-        const newSelectedId = newRoundIdValue === '' ? null : newRoundIdValue; // Use null for overall
-        // console.log(`%chandleRoundChange: Selected Value: ${newRoundIdValue}, Mapped ID: ${newSelectedId}`, 'color: darkcyan;');
-        setSelectedRoundId(newSelectedId);
-        fetchStandings(newSelectedId); // Fetch new data on change
-    };
 
-    
+    // --- Determine Action Link/Text etc. ---
+    // Use const where applicable
+    const roundActionLink = activeRound && (isDeadlinePassed || activeRound.status === 'CLOSED' || activeRound.status === 'COMPLETED') ? "/results" : "/predictions";
+    const roundActionText = activeRound && (isDeadlinePassed || activeRound.status === 'CLOSED' || activeRound.status === 'COMPLETED') ? "View Results" : activeRound?.status === 'SETUP' ? "Round Not Open" : "Make Predictions";
+    let roundStatusText = "Loading...";
+    let roundStatusColor = "text-gray-400";
+
+    if (activeRound) {
+         roundStatusText = activeRound.status;
+         if (activeRound.status === 'OPEN' && !isDeadlinePassed) { roundStatusColor = "text-green-400"; }
+         else if (activeRound.status === 'CLOSED') { roundStatusColor = "text-red-400"; }
+         else if (activeRound.status === 'COMPLETED') { roundStatusColor = "text-blue-400"; }
+         else if (isDeadlinePassed && activeRound.status === 'OPEN') { roundStatusText = "DEADLINE PASSED"; roundStatusColor = "text-red-400"; }
+         else if (activeRound.status === 'SETUP') { roundStatusColor = "text-yellow-400"; }
+    }
+
 
     // --- Render Logic ---
-     if (isAuthLoading) { return <p className="p-4 text-center">Authenticating...</p>; }
-     if (!token && !isAuthLoading) { return ( <div className="p-4 md:p-6"><h1 className="text-2xl font-bold mb-6">Standings</h1><p className="text-red-600 font-semibold">Please log in to view standings.</p></div> ); }
-
-    const filteredRounds = Array.isArray(rounds) ? rounds.filter(round => round && typeof round.roundId === 'number') : [];
-    const isDropdownDisabled = isLoadingRounds;
-    const numColumns = 8; // Adjusted number of columns if changed
-
     return (
-        <div className="p-4 md:p-6">
-            <h1 className="text-2xl font-bold mb-6">Standings</h1>
+        <div className="space-y-6 p-4 md:p-6">
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-100"> Welcome{user?.name ? `, ${user.name}` : ''}! </h1>
 
-            {/* Round Selection and Summary Link Container */}
-            <div className="mb-6 bg-white p-4 rounded shadow border border-gray-200 flex flex-col sm:flex-row gap-4 items-center justify-between">
-                {/* Dropdown Section */}
-                <div className="flex-grow w-full sm:w-auto">
-                    <label htmlFor="roundSelect" className="block text-sm font-medium text-gray-700 mb-1">
-                        View Standings:
-                    </label>
-                    {isLoadingRounds && !roundsError ? (<p className="text-sm text-gray-500">Loading rounds...</p>)
-                    : roundsError ? (<p className="text-sm text-red-600">{roundsError}</p>)
-                    : (
-                        <select
-                            id="roundSelect"
-                            value={selectedRoundId ?? ''} // Handle null state for select value
-                            onChange={handleRoundChange}
-                            className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md shadow-sm"
-                            disabled={isDropdownDisabled || isLoadingStandings}
-                            >
-                            <option value="">-- Overall Standings --</option>
-                            {filteredRounds.map((round) => (
-                                <option key={round.roundId} value={round.roundId.toString()}>
-                                    {round.name}
-                                </option>
-                            ))}
-                        </select>
-                    )}
-                    {filteredRounds.length === 0 && !isLoadingRounds && !roundsError && (
-                        <p className="text-sm text-gray-500 mt-2 italic">No completed rounds found.</p>
-                    )}
-                </div>
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                {/* --- Left Column --- */}
+                <div className="lg:col-span-3 space-y-6">
+                     {/* --- 1. Current Round Section --- */}
+                     <div className={sectionContainerClasses}>
+                         <h2 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"> <FaRegCalendarAlt className="mr-3 text-blue-400" /> Current Round </h2>
+                         {isLoadingRound ? ( <div className="flex items-center text-gray-400"><Spinner className="mr-2 h-4 w-4"/> Loading...</div> )
+                          : roundError ? ( <p className="text-red-400">{roundError}</p> )
+                          : activeRound ? (
+                            <div className="space-y-3">
+                                <p className="text-lg font-medium text-gray-100">{activeRound.name}</p>
+                                <div className="text-sm text-gray-400 space-y-1">
+                                    <p>Status: <span className={`font-semibold ${roundStatusColor}`}>{roundStatusText}</span></p>
+                                    <p>Deadline: <span className={isDeadlinePassed ? 'text-red-300' : 'text-accent'}>{formatDateTime(activeRound.deadline)}</span></p>
+                                </div>
+                                <div className="pt-2">
+                                    <Link
+                                        href={activeRound.status === 'SETUP' ? '#' : roundActionLink}
+                                        className={clsx( /* Base button styles */ 'inline-flex items-center justify-center rounded-sm border border-transparent font-semibold shadow-sm focus:outline-none focus:ring-1 focus:ring-offset-1 focus:ring-offset-gray-900 transition-colors duration-150 ease-in-out', /* Size styles */ 'px-3 py-1.5 text-xs', /* Conditional variants */ { 'bg-green-700 hover:bg-[#228B22] text-white focus:ring-[#228B22]': !isDeadlinePassed && activeRound.status === 'OPEN', 'bg-[#FBBF24] hover:bg-amber-500 text-gray-900 focus:ring-[#FBBF24]': isDeadlinePassed || (activeRound.status !== 'OPEN' && activeRound.status !== 'SETUP'), 'opacity-50 cursor-not-allowed bg-gray-600 hover:bg-gray-600': activeRound.status === 'SETUP' })}
+                                        aria-disabled={activeRound.status === 'SETUP'}
+                                        onClick={(e) => { if (activeRound.status === 'SETUP') e.preventDefault(); }}
+                                    > {roundActionText} {activeRound.status !== 'SETUP' && <FaArrowRight className="ml-2 h-3 w-3"/>} </Link>
+                                </div>
+                            </div>
+                         ) : ( <p className="text-gray-400 italic">No active round.</p> )}
+                     </div>
+                     {/* --- End Current Round --- */}
 
-                {/* Conditional Link to Round Summary */}
-                <div className="w-full sm:w-auto sm:pl-4 flex justify-end sm:self-center pt-2 sm:pt-0">
-                    {selectedRoundId && !isLoadingRounds && !roundsError && ( // Only show if a specific round ID is selected and rounds loaded ok
-                        <Link href={`/rounds/${selectedRoundId}/summary`} className="text-sm text-blue-600 hover:text-blue-800 hover:underline font-medium px-3 py-2 rounded hover:bg-blue-50 transition-colors whitespace-nowrap">
-                            View Round Summary →
-                        </Link>
-                    )}
-                </div>
-            </div> {/* End Selection Container */}
+                     {/* --- Other Sections (Highlights, News) --- */}
+                     <div className={sectionContainerClasses}> <h2 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"> <FaStar className="mr-3 text-yellow-400" /> Highlights </h2> <p className="text-gray-400 italic"> [Placeholder: Stats...] </p> </div>
+                     <div className={sectionContainerClasses}> <h2 className="text-xl font-semibold text-gray-200 mb-3 flex items-center"> <FaNewspaper className="mr-3 text-gray-400" /> News & Updates </h2> <div className="space-y-3"> <p className="text-gray-400 italic pb-2 border-b border-gray-700">[Placeholder: News 1]</p> <p className="text-gray-400 italic pb-2 border-b border-gray-700">[Placeholder: News 2]</p> <p className="text-gray-400 italic">[Placeholder: News 3]</p> </div> </div>
+                </div> {/* End Left Column */}
 
-
-            {/* Standings Table Section */}
-            <h2 className="text-xl font-semibold mb-4">{tableTitle}</h2>
-            {isLoadingStandings ? (<p className="text-center p-4">Loading standings...</p>)
-            : standingsError ? (<p className="text-center p-4 text-red-600 bg-red-100 rounded">Error: {standingsError}</p>)
-            : (
-                <div className="overflow-x-auto shadow rounded border-b border-gray-200 bg-white">
-                    <table className="min-w-full divide-y divide-gray-200 table-fixed sm:table-auto">
-                        <thead className="bg-gray-100">
-                            <tr>
-                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-12 text-center">Pos</th>
-                                <th scope="col" className="py-3 px-1 md:px-2 text-xs font-medium text-gray-600 uppercase tracking-wider w-10 text-center">+/-</th>
-                                <th scope="col" className="py-3 px-2 md:px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider w-1/3 sm:w-auto">Name</th>
-                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-12 text-center">Pld</th>
-                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Outcome</th>
-                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Exact</th>
-                                <th scope="col" className="py-3 px-2 md:px-3 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-center">Acc %</th>
-                                <th scope="col" className="py-3 px-2 md:px-4 text-xs font-medium text-gray-600 uppercase tracking-wider w-16 text-right">Points</th>
-                            </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                            {standings.length === 0 ? (
-                                <tr><td colSpan={numColumns} className="text-center py-6 px-4 text-gray-500 italic">No standings data available{selectedRoundId !== null ? ' for this round' : ''}.</td></tr>
-                            ) : (
-                                // Start mapping over standings array
-                                standings.map((item) => { // <<< Start of .map() callback function scope
-
-                                    // --- DEFINE itemAvatarSrc HERE ---
-                                    // Construct the full URL for *this specific item* inside the loop
-                                    let itemAvatarSrc: string | null = null;
-if (item.avatarUrl) {
-    if (item.avatarUrl.startsWith('http://') || item.avatarUrl.startsWith('https://')) {
-        itemAvatarSrc = item.avatarUrl; // Use absolute URL directly
-    } else {
-        // This case should ideally not happen anymore if all avatars are from Cloudinary.
-        // If you still had old relative URLs (/uploads/...) you might prepend here,
-        // but it's better to ensure data consistency. Log a warning for now.
-        console.warn(`Standings page received unexpected relative avatarUrl: ${item.avatarUrl}`);
-        // Optionally prepend baseUrlForImages if needed for legacy paths:
-        // itemAvatarSrc = `${baseUrlForImages}${item.avatarUrl}`;
-    }
-}
-                                    // ----------------------------------
-
-                                    // Return the JSX for the table row
-                                    return (
-                                        <tr key={item.userId} className="hover:bg-gray-50 transition-colors duration-150">
-                                            {/* Pos */}
-                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm font-medium text-center">{item.rank}</td>
-                                            {/* +/- */}
-                                            <td className="py-3 px-1 md:px-2 whitespace-nowrap text-sm text-center"><MovementIndicator movement={item.movement} /></td>
-
-                                            {/* Name Cell with Avatar */}
-                                            <td className="py-2 px-2 md:px-4 whitespace-nowrap text-sm text-gray-700">
-                                                <div className="flex items-center space-x-2">
-                                                    <Avatar
-                                                        fullAvatarUrl={itemAvatarSrc} // <<< Use the variable defined above
-                                                        name={item.name}       // Assumes item.name is the user's real name
-                                                        size="sm"              // w-8 h-8
-                                                    />
-                                                    {/* Display Team Name if available, otherwise fallback to actual name */}
-                                                    <span className="font-medium truncate" title={item.teamName || item.name}>
-                                                        {item.teamName || item.name}
-                                                    </span>
-                                                </div>
-                                            </td>
-
-                                            {/* Pld */}
-                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.totalPredictions}</td>
-                                            {/* Outcome */}
-                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.correctOutcomes}</td>
-                                            {/* Exact */}
-                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.exactScores}</td>
-                                            {/* Acc % */}
-                                            <td className="py-3 px-2 md:px-3 whitespace-nowrap text-sm text-gray-600 text-center">{item.accuracy !== null ? `${item.accuracy.toFixed(1)}%` : '-'}</td>
-                                            {/* Points */}
-                                            <td className="py-3 px-2 md:px-4 whitespace-nowrap text-sm text-gray-900 font-semibold text-right">{item.points}</td>
-                                        </tr>
-                                    ); // <<< End of return statement for .map()
-                                }) // <<< End of .map() callback function scope
-                            )}
-                        </tbody>
-                    </table>
-                </div>
-            )}
-        </div> // End main container div
+                {/* --- Right Column --- */}
+                <div className="lg:col-span-2 space-y-6">
+                     {/* --- Condensed Standings Table Section - RESTORED FULL JSX --- */}
+                     <div className={sectionContainerClasses}>
+                          <div className="flex justify-between items-center mb-3">
+                             <h2 className="text-xl font-semibold text-gray-200 flex items-center"> <FaTrophy className="mr-3 text-amber-400" /> Standings </h2>
+                             <Link href="/standings" className="text-sm text-accent hover:text-amber-300 hover:underline"> View All </Link>
+                          </div>
+                          {/* Loading/Error States for Standings */}
+                          {isLoadingStandings && <div className="flex items-center justify-center text-gray-400 py-4"><Spinner className="mr-2 h-4 w-4"/> Loading...</div>}
+                          {standingsError && <p className="text-center text-red-400 py-4">{standingsError}</p>}
+                          {/* Standings Table */}
+                          {!isLoadingStandings && !standingsError && (
+                               <div className="overflow-y-auto max-h-[800px]">
+                                   <Table>
+                                       <TableHeader>
+                                           <TableRow>
+                                                {/* These TableHeads ARE used */}
+                                               <TableHead className="w-[40px] text-center">Pos</TableHead>
+                                               <TableHead className="w-[30px] text-center">+/-</TableHead>
+                                               <TableHead>Name</TableHead>
+                                               <TableHead className="text-right w-[60px]">Pts</TableHead>
+                                           </TableRow>
+                                       </TableHeader>
+                                       <TableBody>
+                                           {standings.length === 0 ? (
+                                                <TableRow><TableCell colSpan={4} className="text-center py-6 text-gray-400 italic">No data.</TableCell></TableRow>
+                                           ) : (
+                                                standings.map((entry) => (
+                                                   <TableRow key={entry.userId}>
+                                                       <TableCell className="text-center font-medium">{entry.rank}</TableCell>
+                                                       {/* This uses MovementIndicator */}
+                                                       <TableCell className="text-center"><MovementIndicator movement={entry.movement} /></TableCell>
+                                                       <TableCell>
+                                                           <div className="flex items-center space-x-2">
+                                                                {/* This uses Avatar */}
+                                                               <Avatar size="xs" name={entry.name} fullAvatarUrl={entry.avatarUrl} />
+                                                               <span className="truncate" title={entry.teamName || entry.name}>{entry.teamName || entry.name}</span>
+                                                           </div>
+                                                       </TableCell>
+                                                       <TableCell className="text-right font-semibold">{entry.points}</TableCell>
+                                                   </TableRow>
+                                                  ))
+                                           )}
+                                       </TableBody>
+                                   </Table>
+                               </div>
+                          )}
+                     </div>
+                     {/* --- End Condensed Standings --- */}
+                </div> {/* End Right Column */}
+            </div> {/* End Main Grid */}
+        </div> // End Page Container
     );
 }

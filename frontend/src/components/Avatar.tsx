@@ -1,19 +1,20 @@
 // frontend/src/components/Avatar.tsx
-import React from 'react';
+'use client';
+
+import React, { useState } from 'react';
 import Image from 'next/image';
-import { FaUserCircle } from 'react-icons/fa'; // Assuming react-icons is installed
+import { FaUserCircle } from 'react-icons/fa';
 
 interface AvatarProps {
-    // Changed prop name: Expects the *full, absolute* URL now, or null/undefined
     fullAvatarUrl?: string | null;
-    name?: string | null; // For initials fallback
+    name?: string | null;
     size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
     className?: string;
 }
 
-// Helper function to get initials from a name (Keep as is)
+// Helper function to get initials from a name
 const getInitials = (name?: string | null): string => {
-    if (!name) return '?';
+    if (!name?.trim()) return '?';
     const nameParts = name.trim().split(' ').filter(part => part.length > 0);
     if (nameParts.length === 0) return '?';
     const firstInitial = nameParts[0][0];
@@ -23,62 +24,61 @@ const getInitials = (name?: string | null): string => {
 };
 
 const Avatar: React.FC<AvatarProps> = ({
-    fullAvatarUrl, // Use the new prop name
+    fullAvatarUrl,
     name,
     size = 'md',
     className = '',
 }) => {
-    // Map size prop to Tailwind classes (Keep as is)
+    const [hasError, setHasError] = useState(false);
+
     const sizeClasses = {
         xs: 'w-6 h-6 text-xs',
         sm: 'w-8 h-8 text-sm',
         md: 'w-10 h-10 text-base',
         lg: 'w-12 h-12 text-lg',
-        xl: 'w-16 h-16 text-xl',
+        xl: 'w-32 h-32 text-xl',
     }[size];
 
     const initials = getInitials(name);
 
-    // --- REMOVED Base URL Construction Logic ---
-    // The component now expects the full URL to be passed in via `fullAvatarUrl` prop.
-    // --- END REMOVAL ---
+    const baseContainerClasses = `relative rounded-full flex items-center justify-center bg-gray-300 dark:bg-gray-700 overflow-hidden ${sizeClasses} ${className}`;
 
-    // Base classes for the container (Keep as is)
-    const baseContainerClasses = `relative rounded-full flex items-center justify-center bg-gray-300 dark:bg-gray-600 overflow-hidden ${sizeClasses} ${className}`;
+    const showImage = fullAvatarUrl && !hasError;
+
+    // Define fallback content separately
+    const fallbackContent = name ? (
+        <span className="font-semibold text-gray-200 select-none">{initials}</span>
+    ) : (
+        <FaUserCircle className={`text-gray-400 w-[60%] h-[60%]`} />
+    );
 
     return (
         <div className={baseContainerClasses}>
-            {/* Use the fullAvatarUrl prop directly */}
-            {fullAvatarUrl ? (
+            {showImage ? ( // Render image if showImage is true
                 <Image
-                    src={fullAvatarUrl} // <<< Pass the full URL directly to src
+                    src={fullAvatarUrl!} // Can use non-null assertion if showImage guarantees it's defined
                     alt={name || 'User Avatar'}
                     fill
-                    sizes={ // Adjust sizes based on the 'size' prop (example values)
+                    sizes={
                         size === 'xs' ? '24px' :
                         size === 'sm' ? '32px' :
                         size === 'md' ? '40px' :
                         size === 'lg' ? '48px' :
-                        '64px' // xl
+                        size === 'xl' ? '264px' :
+                        '64px'
                     }
-                    className="object-cover" // Image covers the container
+                    className="object-cover"
                     priority={false}
-                    onError={(e) => {
-                        // Hide broken image on error
+                    onError={() => {
                         console.warn(`[Avatar Component] Failed to load image: ${fullAvatarUrl}`);
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        // Consider adding state here to show initials/icon as fallback on error if needed
+                        setHasError(true);
                     }}
                 />
-            ) : name ? ( // Fallback to initials if no URL but name exists
-                <span className="font-semibold text-white dark:text-gray-200 select-none">
-                    {initials}
-                </span>
-            ) : ( // Fallback to default icon if no URL and no name
-                <FaUserCircle className={`text-white dark:text-gray-200 w-[60%] h-[60%]`} />
+            ) : ( // Otherwise, render the determined fallback content
+                fallbackContent
             )}
-        </div>
-    );
-};
+        </div> // This closes the main div
+    ); // This closes the return statement
+}; // This closes the component function
 
 export default Avatar;

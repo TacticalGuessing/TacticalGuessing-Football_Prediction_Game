@@ -1,68 +1,101 @@
 // frontend/src/components/Modal/ConfirmationModal.tsx
-import React from 'react';
+'use client';
+
+import React from 'react'; // Import useEffect from React
+
+// --- UI Component Imports ---
+import { Button, ButtonProps } from '@/components/ui/Button'; // Assuming ButtonProps is now exported
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/Card'; // Removed CardDescription
 
 interface ConfirmationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  message: string | React.ReactNode;
-  confirmText?: string;
-  cancelText?: string;
-  isConfirming?: boolean; // Optional: To show loading state on confirm button
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title: string;
+    message: React.ReactNode; // Allow JSX in the message
+    confirmText?: string;
+    cancelText?: string;
+    isConfirming?: boolean; // Loading state for confirm button
+    confirmButtonVariant?: ButtonProps['variant']; // Use variant type from ButtonProps
 }
 
-const ConfirmationModal: React.FC<ConfirmationModalProps> = ({
-  isOpen,
-  onClose,
-  onConfirm,
-  title,
-  message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
-  isConfirming = false, // Default to false
-}) => {
-  if (!isOpen) return null;
+export default function ConfirmationModal({
+    isOpen,
+    onClose,
+    onConfirm,
+    title,
+    message,
+    confirmText = 'Confirm',
+    cancelText = 'Cancel',
+    isConfirming = false,
+    confirmButtonVariant = 'primary', // Default to primary, can be overridden (e.g., 'danger')
+}: ConfirmationModalProps) {
 
-  return (
-    <div
-      className="fixed inset-0 bg-gray-600 bg-opacity-75 overflow-y-auto h-full w-full z-50 flex justify-center items-center"
-      onClick={onClose} // Close if clicking overlay
-    >
-      <div
-        className="relative mx-auto p-6 border w-full max-w-lg shadow-lg rounded-md bg-white"
-        onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal content
-      >
-        {/* Title */}
-        <h3 className="text-xl font-semibold leading-6 text-gray-900 mb-4">
-          {title}
-        </h3>
-        {/* Message */}
-        <div className="mb-6 text-sm text-gray-600">
-          {typeof message === 'string' ? <p>{message}</p> : message}
-        </div>
-        {/* Action Buttons */}
-        <div className="flex justify-end gap-3 border-t pt-4 mt-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={isConfirming} // Disable if confirming action is in progress
-            className="px-4 py-2 bg-gray-200 text-gray-800 rounded hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-400 disabled:opacity-50"
-          >
-            {cancelText}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={isConfirming} // Disable while confirming
-            className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-wait"
-          >
-            {isConfirming ? 'Processing...' : confirmText} {/* Show loading text */}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-};
+    // --- Moved useEffect HERE (before the early return) ---
+    // Optional: Prevent background scroll when modal is open
+    React.useEffect(() => {
+        // Only add/remove overflow style if modal is actually open
+        if (isOpen) {
+            document.body.style.overflow = 'hidden';
+        }
+        // Cleanup function ALWAYS resets overflow when component unmounts
+        // or BEFORE the effect runs again if isOpen changes from true to false
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, [isOpen]); // Added isOpen dependency
+    // --- END MOVED useEffect ---
 
-export default ConfirmationModal;
+
+    // Early return if not open
+    if (!isOpen) {
+        return null;
+    }
+
+    // --- Refactored JSX using UI Components ---
+    return (
+        // Modal backdrop
+        <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4"
+            onClick={onClose} // Close on backdrop click
+        >
+            {/* Use Card for modal content - stop propagation so clicking card doesn't close it */}
+            <Card
+                className="w-full max-w-md dark:bg-gray-800"
+                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside card
+            >
+                <CardHeader>
+                    <CardTitle>{title}</CardTitle>
+                     {/* Optionally add description if needed via props later */}
+                     {/* <CardDescription>Optional description here</CardDescription> */}
+                </CardHeader>
+                <CardContent>
+                    {/* Render the message content (can be simple text or complex JSX) */}
+                    <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+                        {message}
+                    </div>
+                </CardContent>
+                <CardFooter className="flex justify-end space-x-3">
+                     {/* Cancel Button */}
+                    <Button
+                        variant="outline"
+                        onClick={onClose}
+                        disabled={isConfirming}
+                    >
+                        {cancelText}
+                    </Button>
+                    {/* Confirm Button */}
+                    <Button
+                        // Use the passed variant prop, default to primary/danger
+                        variant={confirmButtonVariant}
+                        onClick={onConfirm}
+                        disabled={isConfirming}
+                        isLoading={isConfirming} // Pass loading state
+                    >
+                        {confirmText}
+                    </Button>
+                </CardFooter>
+            </Card>
+        </div>
+    );
+}

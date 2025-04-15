@@ -1,5 +1,6 @@
 // frontend/src/lib/api.ts
 //import { toast } from 'react-hot-toast'; // <<< Ensure this is imported
+import axios from 'axios';
 
 // Define the base URL for the API
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/api';
@@ -173,7 +174,7 @@ export interface CreateRoundPayload {
 
 // Payload for updating round status
 export interface UpdateRoundStatusPayload {
-    status: 'SETUP' | 'OPEN' | 'CLOSED'; // Only allow setting these explicitly
+    status: 'SETUP' | 'OPEN' | 'CLOSED' ; // Only allow setting these explicitly
 }
 
 // --- NEW: Payload for updating round details (name, deadline) ---
@@ -1268,6 +1269,46 @@ export const getRoundSummary = async (
 // --- END: Round Summary API Function ---
 
 // --- END: Admin Audit API Functions ---
+
+// --- Development Only Reset Function ---
+export const resetGameDataForDev = async (token: string): Promise<{ message: string }> => {
+    console.log('Attempting to reset game data (DEV ONLY)...');
+    if (!token) throw new Error('Authentication token is required.');
+
+    // Define the expected endpoint URL
+    const apiUrl = `${process.env.NEXT_PUBLIC_API_URL}/admin/dev/reset-game-data`;
+
+    try {
+        const response = await axios.post(
+            apiUrl,
+            {}, // Send an empty body for this POST request
+            { headers: { Authorization: `Bearer ${token}` } }
+        );
+
+        // Check for successful status codes (e.g., 200, 204)
+        if (response.status === 200 || response.status === 204) {
+             console.log('Game data reset successful:', response.data);
+             // Return the message from the backend, or a default one
+             return response.data || { message: 'Game data reset successfully.' };
+        } else {
+             // Handle unexpected successful status codes if necessary
+             throw new Error(`Unexpected success status: ${response.status}`);
+        }
+    } catch (error) {
+         console.error('API Error resetting game data:', error);
+         // Re-throw specific ApiError or standard Error
+         if (axios.isAxiosError(error) && error.response) {
+            // Extract message from backend error response if available
+            const apiErrorMessage = error.response.data?.message || error.response.statusText || 'Failed to reset data from API';
+             throw new ApiError(apiErrorMessage, error.response.status);
+         } else if (error instanceof Error) {
+             throw error; // Re-throw other types of errors
+         } else {
+             throw new Error('An unknown error occurred during data reset.');
+         }
+    }
+};
+// --- End Development Reset Function ---
 
 // ============================
 // ==========================================================

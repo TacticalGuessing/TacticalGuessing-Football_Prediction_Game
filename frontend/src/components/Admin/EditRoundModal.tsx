@@ -2,31 +2,34 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent } from 'react';
-import { Round } from '@/lib/api'; // Import the Round type
-// Removed LoadingSpinner import
+import { Round } from '@/lib/api';
+import { toast } from 'react-hot-toast'; // <--- Added toast import
+
+// UI Component Imports
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Label } from '@/components/ui/Label';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
 
 interface EditRoundModalProps {
     isOpen: boolean;
-    round: Round; // The round data to pre-fill the form
+    round: Round;
     onClose: () => void;
-    onSave: (updatedData: { name: string; deadline: string }) => Promise<void> | void; // Function to call on save
-    error: string | null; // Error message to display
-    isLoading: boolean; // Loading state for the save action
+    onSave: (updatedData: { name: string; deadline: string }) => Promise<void> | void;
+    error: string | null; // Error from parent to display
+    isLoading: boolean; // Loading state from parent
 }
 
-// Helper function to format ISO string to datetime-local compatible string
-// YYYY-MM-DDTHH:MM
-const formatISOToDateTimeLocal = (isoString: string): string => {
+const formatISOToDateTimeLocal = (isoString: string | null | undefined): string => {
     if (!isoString) return '';
     try {
         const date = new Date(isoString);
-        // Adjust for timezone offset to get local time correctly formatted
-        const timezoneOffset = date.getTimezoneOffset() * 60000; // offset in milliseconds
+        const timezoneOffset = date.getTimezoneOffset() * 60000;
         const localISOTime = new Date(date.getTime() - timezoneOffset).toISOString().slice(0, 16);
         return localISOTime;
     } catch (e) {
         console.error("Error formatting date:", e);
-        return ''; // Return empty string on error
+        return '';
     }
 };
 
@@ -35,24 +38,34 @@ export default function EditRoundModal({
     round,
     onClose,
     onSave,
-    error,
+    error, // This is the error passed FROM the parent
     isLoading
 }: EditRoundModalProps) {
-    const [name, setName] = useState(round.name);
-    // Initialize deadline state with formatted value for the input
-    const [deadline, setDeadline] = useState(formatISOToDateTimeLocal(round.deadline));
+    // Internal state for form fields
+    const [name, setName] = useState('');
+    const [deadline, setDeadline] = useState('');
+    // Removed internal error/loading state as they are passed via props
 
-    // Effect to reset form state when the 'round' prop changes (e.g., opening modal for a different round)
+    // Effect to PREFILL form state when the modal opens or the round prop changes
     useEffect(() => {
-        if (round) {
+        if (isOpen && round) {
             setName(round.name);
             setDeadline(formatISOToDateTimeLocal(round.deadline));
         }
-    }, [round]); // Dependency array includes round
+        // No need to reset error here - parent controls error display
+    }, [isOpen, round]); // Dependencies are correct
+
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
-        await onSave({ name, deadline: deadline });
+        if (isLoading) return;
+
+        if (!name.trim() || !deadline) {
+             toast.error("Round Name and Deadline cannot be empty.");
+             return;
+        }
+        // Call the onSave prop passed from the parent, which handles API call & parent state
+        await onSave({ name: name.trim(), deadline: deadline });
     };
 
     if (!isOpen) {
@@ -60,75 +73,45 @@ export default function EditRoundModal({
     }
 
     return (
-        // Modal backdrop
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-100 p-4">
-            {/* Modal content */}
-            <div className="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-                <h2 className="text-xl font-bold mb-4">Edit Round Details (ID: {round.roundId})</h2>
-
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+            <Card className="w-full max-w-md dark:bg-gray-800">
+                <CardHeader>
+                    <CardTitle>Edit Round Details</CardTitle>
+                    <CardDescription>Update name or deadline for Round ID: {round.roundId}</CardDescription>
+                </CardHeader>
+                {/* Form inside CardContent */}
                 <form onSubmit={handleSubmit}>
-                    {/* Error Display */}
-                    {error && (
-                        <p className="text-red-500 bg-red-100 p-3 rounded mb-4 text-sm">{error}</p>
-                    )}
+                    <CardContent className="space-y-4">
+                        {/* Error Display (shows error passed from parent) */}
+                        {error && (
+                            <p className="text-sm text-red-500 dark:text-red-400">{error}</p>
+                        )}
 
-                    {/* Round Name Input */}
-                    <div className="mb-4">
-                        <label htmlFor="roundName" className="block text-sm font-medium text-gray-700 mb-1">
-                            Round Name
-                        </label>
-                        <input
-                            type="text"
-                            id="roundName"
-                            value={name}
-                            onChange={(e) => setName(e.target.value)}
-                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                            required
-                        />
-                    </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="editRoundName">Round Name</Label>
+                            <Input type="text" id="editRoundName" value={name} onChange={(e) => setName(e.target.value)} required disabled={isLoading} />
+                        </div>
 
-                    {/* Deadline Input */}
-                    <div className="mb-6">
-                        <label htmlFor="roundDeadline" className="block text-sm font-medium text-gray-700 mb-1">
-                            Prediction Deadline
-                        </label>
-                        <input
-                            type="datetime-local"
-                            id="roundDeadline"
-                            value={deadline}
-                            onChange={(e) => setDeadline(e.target.value)}
-                            className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                            required
-                        />
-                         <p className="text-xs text-gray-500 mt-1">Note: Deadline is in your local time.</p>
-                         {round.status !== 'SETUP' && (
-                              <p className="text-xs text-orange-600 mt-1">
-                                  Warning: Modifying the deadline for a round that is not in &apos;SETUP&apos; status might have unintended consequences.
-                              </p>
-                         )}
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="flex justify-end space-x-3">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            disabled={isLoading}
-                            className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={isLoading}
-                            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                        >
-                             {/* Removed LoadingSpinner */}
-                            {isLoading ? 'Saving...' : 'Save Changes'}
-                        </button>
-                    </div>
+                        <div className="space-y-1.5">
+                            <Label htmlFor="editRoundDeadline">Prediction Deadline</Label>
+                            <Input type="datetime-local" id="editRoundDeadline" value={deadline} onChange={(e) => setDeadline(e.target.value)} required disabled={isLoading} />
+                            <p className="text-xs text-gray-400 dark:text-gray-400 mt-1">Note: Deadline is in your local timezone.</p>
+                            {round.status !== 'SETUP' && (
+                                  <p className="text-xs text-orange-500 dark:text-orange-400 mt-1">
+                                      {/* Use ' for single quotes in JSX */}
+                                      Warning: Modifying deadline for non-&apos;SETUP&apos; round.
+                                  </p>
+                             )}
+                        </div>
+                    </CardContent>
+                    <CardFooter className="flex justify-end space-x-3">
+                        <Button type="button" variant="outline" onClick={onClose} disabled={isLoading}> Cancel </Button>
+                        <Button type="submit" disabled={isLoading} isLoading={isLoading}> Save Changes </Button>
+                    </CardFooter>
                 </form>
-            </div>
+            </Card>
         </div>
     );
 }
+
+// Removed the placeholder variables at the bottom

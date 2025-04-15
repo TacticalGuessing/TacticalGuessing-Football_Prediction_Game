@@ -2,7 +2,7 @@
 'use client';
 
 // Import necessary React hooks and types
-import React, { useState, useEffect, useCallback, FormEvent } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link'; // <<< Import Link
 import { useAuth } from '@/context/AuthContext';
@@ -11,17 +11,29 @@ import { toast } from 'react-hot-toast';
 // Import API functions and types
 import {
     getRounds,
-    createRound,
+    //createRound,
     updateRoundStatus,
     triggerScoring,
     deleteRound,
     Round,
     updateRoundDetails,
+    
 } from '@/lib/api';
 
 // Import necessary components
 import EditRoundModal from '@/components/Admin/EditRoundModal';
 import ConfirmationModal from '@/components/Modal/ConfirmationModal';
+
+// --- Add UI Component Imports ---
+import { Button } from '@/components/ui/Button';
+//import { Input } from '@/components/ui/Input';
+//import { Label } from '@/components/ui/Label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
+import { FaEdit, FaTrashAlt, FaList, FaToggleOff, FaToggleOn, FaCalculator, FaExclamationTriangle, FaUserCog, } from 'react-icons/fa'; // Added FaCalculator
+import { formatDateTime } from '@/utils/formatters'; // Ensure this path is correct
+
+// Define RoundStatus locally if not exported from API
+type RoundStatus = 'SETUP' | 'OPEN' | 'CLOSED' ;
 
 // Define the payload type for updating round details
 interface UpdateRoundPayload {
@@ -38,14 +50,15 @@ export default function AdminRoundsPage() {
     const [rounds, setRounds] = useState<Round[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [actionLoading, setActionLoading] = useState<Record<number, boolean>>({});
-    const [newRoundName, setNewRoundName] = useState('');
-    const [newRoundDeadline, setNewRoundDeadline] = useState('');
-    const [isCreating, setIsCreating] = useState(false);
-    const [createError, setCreateError] = useState<string | null>(null);
+    
+    //const [newRoundName, setNewRoundName] = useState('');
+    //const [newRoundDeadline, setNewRoundDeadline] = useState('');
+    //const [isCreating, setIsCreating] = useState(false);
+    //const [createError, setCreateError] = useState<string | null>(null);
     const [isEditModalOpen, setIsEditModalOpen] = useState(false);
     const [editingRound, setEditingRound] = useState<Round | null>(null);
     const [editError, setEditError] = useState<string | null>(null);
+    const [isUpdating, setIsUpdating] = useState(false);
     const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
     const [roundToDelete, setRoundToDelete] = useState<Round | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -83,44 +96,25 @@ export default function AdminRoundsPage() {
     }, [token, user, isAuthLoading, router, fetchRounds, isLoading]);
 
     // Helper to set loading state
-    const setRoundActionLoading = (roundId: number, isLoading: boolean) => {
-        setActionLoading(prev => ({ ...prev, [roundId]: isLoading }));
-    };
+    
 
     // --- Handlers ---
 
-    const handleCreateRoundSubmit = async (e: FormEvent) => {
-        e.preventDefault();
-        if (!token) return;
-        if (!newRoundName.trim() || !newRoundDeadline) {
-             toast.error("Round Name and Prediction Deadline are required."); return;
-         }
-        setIsCreating(true); setCreateError(null); setError(null);
-        try {
-            await createRound({ name: newRoundName, deadline: newRoundDeadline }, token);
-            setNewRoundName(''); setNewRoundDeadline('');
-            await fetchRounds(); toast.success('Round created successfully!');
-        } catch (err: unknown) {
-            const errorMsg = err instanceof Error ? err.message : 'Failed to create round';
-            setCreateError(errorMsg); toast.error(`Creation failed: ${errorMsg}`);
-        } finally { setIsCreating(false); }
-    };
-
-    const handleStatusChange = async (roundId: number, newStatus: 'SETUP' | 'OPEN' | 'CLOSED') => {
+    const handleStatusChange = async (roundId: number, newStatus: RoundStatus) => {
          if (!token) return;
-         setRoundActionLoading(roundId, true); setError(null);
+         
          try {
              await updateRoundStatus(roundId, { status: newStatus }, token);
              await fetchRounds(); toast.success(`Round ${roundId} status updated to ${newStatus}.`);
          } catch (err: unknown) {
               const errorMsg = err instanceof Error ? err.message : `Failed to update status for round ${roundId}`;
               setError(errorMsg); toast.error(`Status update failed: ${errorMsg}`);
-         } finally { setRoundActionLoading(roundId, false); }
+         } 
      };
 
     const handleTriggerScoring = async (roundId: number) => {
           if (!token) return;
-          setRoundActionLoading(roundId, true); setError(null);
+          
           try {
               await triggerScoring(roundId, token);
               toast.success(`Scoring triggered for round ${roundId}. Status will update.`);
@@ -128,10 +122,10 @@ export default function AdminRoundsPage() {
           } catch (err: unknown) {
               const errorMsg = err instanceof Error ? err.message : `Failed to trigger scoring for round ${roundId}`;
               setError(errorMsg); toast.error(`Scoring trigger failed: ${errorMsg}`);
-          } finally { setRoundActionLoading(roundId, false); }
+          } 
       };
 
-    const openDeleteConfirmModal = (round: Round) => {
+    const openDeleteModal = (round: Round) => {
         setRoundToDelete(round); setIsConfirmDeleteOpen(true);
     };
 
@@ -142,7 +136,7 @@ export default function AdminRoundsPage() {
     const handleConfirmDelete = async () => {
         if (!token || !roundToDelete) return;
         const roundIdToDelete = roundToDelete.roundId;
-        setIsDeleting(true); setRoundActionLoading(roundIdToDelete, true); setError(null);
+        setIsDeleting(true);  setError(null);
         try {
             await deleteRound(roundIdToDelete, token);
             await fetchRounds(); toast.success(`Round "${roundToDelete.name}" deleted successfully!`);
@@ -152,7 +146,7 @@ export default function AdminRoundsPage() {
             setError(errorMsg); toast.error(`Deletion failed: ${errorMsg}`);
             closeDeleteConfirmModal(); // Close even on error
         } finally {
-            setIsDeleting(false); setRoundActionLoading(roundIdToDelete, false);
+            setIsDeleting(false);
         }
     };
 
@@ -165,22 +159,45 @@ export default function AdminRoundsPage() {
     };
 
     const handleUpdateRound = async (updatedData: UpdateRoundPayload) => {
-        if (!token || !editingRound) return;
-        // Optional: Check if data actually changed before API call
-        // if (updatedData.name === editingRound.name && updatedData.deadline === editingRound.deadline) {
-        //     handleCloseEditModal(); return;
-        // }
+        if (!token || !editingRound || isUpdating) return; // Prevent double submit using isUpdating
+
         const roundIdToUpdate = editingRound.roundId;
-        setRoundActionLoading(roundIdToUpdate, true); setEditError(null); setError(null);
+    
+        // --- Set Loading State ---
+        setIsUpdating(true); // <--- USE setIsUpdating here
+        // setRoundActionLoading(roundIdToUpdate, true); // Remove if actionLoading is redundant
+    
+        setEditError(null); setError(null); // Clear errors
+    
         try {
-            await updateRoundDetails(roundIdToUpdate, updatedData, token);
-            await fetchRounds(); handleCloseEditModal();
+            // Convert deadline if needed by API (assuming API expects ISO)
+            const payloadToSubmit = { ...updatedData };
+            if (updatedData.deadline) {
+                 try {
+                     payloadToSubmit.deadline = new Date(updatedData.deadline).toISOString();
+                    } catch (dateError) {
+                        console.error("Invalid deadline format during update:", updatedData.deadline, dateError); // Added dateError here
+                        throw new Error("Invalid deadline date format.");
+                   }
+            }
+    
+            await updateRoundDetails(roundIdToUpdate, payloadToSubmit, token); // Use the correct API function
+            await fetchRounds(); // Refresh list
+            handleCloseEditModal(); // Close modal on success
             toast.success(`Round "${updatedData.name || editingRound.name}" updated successfully!`);
+    
         } catch (err: unknown) {
             const errorMsg = err instanceof Error ? err.message : 'Failed to update round details.';
-            console.error("Error updating round:", err); setEditError(errorMsg);
+            console.error("Error updating round:", err);
+            setEditError(errorMsg); // Show error in modal
             toast.error(`Update failed: ${errorMsg}`);
-        } finally { setRoundActionLoading(roundIdToUpdate, false); }
+            // Keep modal open on error
+    
+        } finally {
+            // --- Reset Loading State ---
+            setIsUpdating(false); // <--- USE setIsUpdating here
+             // setRoundActionLoading(roundIdToUpdate, false); // Remove if actionLoading is redundant
+        }
     };
 
     // --- Render Logic ---
@@ -197,107 +214,139 @@ export default function AdminRoundsPage() {
 
     // Main component rendering
     return (
-        <div className="p-4 md:p-6">
-            <h1 className="text-2xl font-bold mb-6">Admin Dashboard</h1>
+        // Main page container - Apply padding here
+        <div className="p-4 md:p-6 space-y-6"> {/* Added space-y-6 for spacing between elements */}
 
-            {error && <p className="text-red-500 bg-red-100 p-3 rounded mb-4">Error: {error}</p>}
+            {/* Page Title - Moved up, standard margin bottom */}
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-100 mb-6 flex items-center"> {/* Added flex */}
+               <FaUserCog className="mr-3 text-gray-400" /> {/* Added icon */}
+                Admin Dashboard
+            </h1>
 
-            {/* Grid for Admin Sections */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            {/* Global Error Display (if any) */}
+            {error && <p className="text-sm text-red-400 p-3 bg-red-900/30 border border-red-800 rounded">{error}</p>}
 
-                {/* Create Round Form */}
-                 <div className="bg-white p-4 rounded shadow border border-gray-200">
-                    <h2 className="text-lg font-semibold mb-3">Create New Round</h2>
-                    {createError && <p className="text-red-500 text-sm mb-3">Error: {createError}</p>}
-                    <form onSubmit={handleCreateRoundSubmit} className="space-y-4">
-                        <div>
-                            <label htmlFor="newRoundName" className="block text-sm font-medium text-gray-700 mb-1"> Round Name: </label>
-                            <input type="text" id="newRoundName" value={newRoundName} onChange={(e) => setNewRoundName(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required disabled={isCreating}/>
-                        </div>
-                        <div>
-                             <label htmlFor="newRoundDeadline" className="block text-sm font-medium text-gray-700 mb-1"> Prediction Deadline: </label>
-                             <input type="datetime-local" id="newRoundDeadline" value={newRoundDeadline} onChange={(e) => setNewRoundDeadline(e.target.value)} className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm" required disabled={isCreating}/>
-                             <p className="text-xs text-gray-500 mt-1">Select date and time in your local timezone.</p>
-                        </div>
-                        <div className="text-right"> <button type="submit" disabled={isCreating} className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"> {isCreating ? 'Creating...' : 'Create Round'} </button> </div>
-                    </form>
-                 </div>
+            {/* Removed the top grid div that contained Create/Audit/Users sections */}
 
-                 {/* === NEW: Audit Link Section === */}
-                 <div className="bg-white p-4 rounded-lg shadow border border-gray-200">
-                    <h2 className="text-xl font-semibold mb-3 text-gray-700">Audit & Verification</h2>
-                    <Link href="/admin/audit" className="text-blue-600 hover:underline block font-medium">
-                        Prediction Audit Tool →
-                    </Link>
-                     <p className="text-sm text-gray-500 mt-1">View user predictions vs results for completed rounds.</p>
-                 </div>
-                 {/* === END NEW SECTION === */}
+            {/* Rounds List Table Section - Now directly follows the title */}
+            <div className="bg-gray-800 rounded-lg shadow border border-gray-700"> {/* Container for the table section */}
+                {/* Header inside the container - REMOVED duplicate H2 */}
+                <div className="px-6 py-4 border-b border-gray-700"> {/* Optional: Header padding & border if needed */}
+                    <h2 className="text-xl font-semibold text-gray-200">Manage Existing Rounds</h2>
+                </div>
 
-                 {/* --- ADD THIS LINK --- */}
-                 <li>
-                        <Link href="/admin/users" className="text-blue-600 hover:underline">Manage Users</Link>
-                    </li>
-                    {/* --- END ADD LINK --- */}
+                {/* Loading/Empty States */}
+                {isLoading && <p className="text-center text-gray-400 py-6">Loading rounds...</p>}
+                {!isLoading && rounds.length === 0 && !error && <p className="text-center text-gray-400 italic py-6">No rounds found.</p>}
 
-            </div> {/* End Grid */}
+                {/* Table Container */}
+                {!isLoading && rounds.length > 0 && (
+                     <div className="overflow-x-auto"> {/* Removed extra border/rounding */}
+                        <Table>
+                            <TableHeader>
+                                <TableRow>
+                                    <TableHead className="w-[50px]">ID</TableHead>
+                                    <TableHead>Name</TableHead>
+                                    <TableHead>Deadline</TableHead>
+                                    <TableHead className="text-center">Status</TableHead>
+                                    {/* Adjusted width for Actions column */}
+                                    <TableHead className="text-center w-[250px]">Actions</TableHead>
+                                </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                                {rounds.map((round) => {
+                                    const isDeletingThis = isDeleting && roundToDelete?.roundId === round.roundId;
+                                    const statusClass =
+                                        round.status === 'OPEN' ? 'bg-green-200 text-green-900 dark:bg-green-900/50 dark:text-green-300' :
+                                        round.status === 'CLOSED' ? 'bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-300' :
+                                        round.status === 'COMPLETED' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' :
+                                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'; // SETUP
+
+                                    return (
+                                        <TableRow key={round.roundId} data-state={isDeletingThis ? 'disabled' : undefined} className={isDeletingThis ? 'opacity-50 pointer-events-none' : ''}>
+                                            <TableCell className="font-medium">{round.roundId}</TableCell>
+                                            <TableCell>{round.name}</TableCell>
+                                            <TableCell className="text-xs text-gray-400">{formatDateTime(round.deadline)}</TableCell>
+                                            {/* Status Cell - Just the badge */}
+                                            <TableCell className="text-center">
+                                                <span className={`px-2 py-0.5 inline-flex items-center justify-center text-xs leading-5 font-semibold rounded-full ${statusClass}`}>
+                                                     {round.status}
+                                                </span>
+                                                {/* Removed the div with status change buttons from here */}
+                                            </TableCell>
+                                            {/* Actions Cell - Always Show Icons */}
+ <TableCell className="text-center space-x-1 flex items-center justify-center">
+     {/* Manage Fixtures */}
+     <Link href={`/admin/rounds/${round.roundId}/fixtures`} passHref legacyBehavior>
+         <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white" title="Manage Fixtures" disabled={isDeleting || isUpdating}>
+             <FaList className="h-3.5 w-3.5" /> <span className="sr-only">Fixtures</span>
+         </Button>
+     </Link>
+
+     {/* Edit Round Details */}
+     <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white" onClick={() => handleOpenEditModal(round)} disabled={isDeleting || isUpdating} title="Edit Round Details">
+         <FaEdit className="h-3.5 w-3.5" /> <span className="sr-only">Edit</span>
+     </Button>
+
+     {/* Trigger Scoring - Show icon always, disable if not CLOSED */}
+     <Button
+         variant="ghost" size="sm"
+         className={round.status === 'CLOSED' ? "text-purple-400 hover:text-purple-300 hover:bg-purple-900/50" : "text-gray-600 cursor-not-allowed"} // Dim if disabled
+         onClick={() => round.status === 'CLOSED' ? handleTriggerScoring(round.roundId) : undefined}
+         disabled={isDeleting || isUpdating || round.status !== 'CLOSED'}
+         title={round.status === 'CLOSED' ? "Trigger Scoring" : "Scoring only available when round is CLOSED"}
+     >
+         <FaCalculator className="h-4 w-4"/> <span className="sr-only">Trigger Scoring</span>
+     </Button>
+
+     {/* --- Status Toggles --- */}
+     {/* Show "Open" toggle if status is SETUP */}
+     {round.status === 'SETUP' && (
+          <Button variant="ghost" size="sm" className="text-green-400 hover:text-green-300 hover:bg-green-900/50" onClick={() => handleStatusChange(round.roundId, 'OPEN')} disabled={isDeleting || isUpdating} title="Open Round">
+             <FaToggleOff className="h-4 w-4"/> <span className="sr-only">Open Round</span>
+          </Button>
+     )}
+      {/* Show "Close" toggle if status is OPEN */}
+      {round.status === 'OPEN' && (
+          <Button variant="ghost" size="sm" className="text-red-400 hover:text-red-300 hover:bg-red-900/50" onClick={() => handleStatusChange(round.roundId, 'CLOSED')} disabled={isDeleting || isUpdating} title="Close Round">
+             <FaToggleOn className="h-4 w-4"/> <span className="sr-only">Close Round</span>
+          </Button>
+     )}
+     {/* Optionally show a disabled/warning icon if status is CLOSED or COMPLETED */}
+      {(round.status === 'CLOSED' || round.status === 'COMPLETED') && (
+         <Button variant="ghost" size="sm" className="text-gray-600 cursor-not-allowed" disabled={true} title={round.status === 'CLOSED' ? "Round is Closed (trigger scoring)" : "Round is Completed"}>
+              {/* You could use FaToggleOn here dimmed, or a different icon */}
+              <FaExclamationTriangle className="h-4 w-4 text-gray-600" />
+              <span className="sr-only">Cannot change status</span>
+         </Button>
+     )}
+     {/* --- End Status Toggles --- */}
 
 
-            {/* Rounds List Table */}
-            <h2 className="text-xl font-semibold mt-8 mb-4">Manage Existing Rounds</h2>
-            <div className="overflow-x-auto shadow rounded border-b border-gray-200 bg-white">
-                 <table className="min-w-full divide-y divide-gray-200">
-                     <thead className="bg-gray-100">
-                        <tr>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">ID</th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Name</th>
-                            <th className="py-3 px-4 text-left text-xs font-medium text-gray-600 uppercase tracking-wider">Deadline</th>
-                            <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Status</th>
-                            <th className="py-3 px-4 text-center text-xs font-medium text-gray-600 uppercase tracking-wider">Actions</th>
-                        </tr>
-                     </thead>
-                     <tbody className="bg-white divide-y divide-gray-200">
-                          {/* Loading/Empty Row */}
-                          {!isLoading && rounds.length === 0 && !error ? (
-                                <tr><td colSpan={5} className="text-center py-4 px-4 text-gray-500 italic">No rounds found. Create one above!</td></tr>
-                          ) : (
-                                rounds.map((round) => (
-                                     <tr key={round.roundId} className="hover:bg-gray-50 transition-colors duration-150">
-                                          {/* Data Cells */}
-                                          <td className="py-3 px-4 whitespace-nowrap text-sm">{round.roundId}</td>
-                                          <td className="py-3 px-4 whitespace-nowrap text-sm">{round.name}</td>
-                                          <td className="py-3 px-4 whitespace-nowrap text-sm">
-                                              {new Date(round.deadline).toLocaleString('en-GB', { dateStyle: 'short', timeStyle: 'short', hour12: false })}
-                                          </td>
-                                          <td className="py-3 px-4 whitespace-nowrap text-sm text-center font-medium">
-                                              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                                 round.status === 'COMPLETED' ? 'bg-green-100 text-green-800' :
-                                                 round.status === 'OPEN' ? 'bg-blue-100 text-blue-800' :
-                                                 round.status === 'CLOSED' ? 'bg-red-100 text-red-800' :
-                                                 'bg-gray-100 text-gray-800'
-                                              }`}>
-                                                  {round.status}
-                                              </span>
-                                          </td>
-                                          {/* Action Buttons Cell */}
-                                          <td className="py-3 px-4 whitespace-nowrap text-sm text-center space-x-1">
-                                                {actionLoading[round.roundId] && !isDeleting ? <span className="text-xs italic">Working...</span> : (
-                                                     <>
-                                                          <button onClick={() => handleOpenEditModal(round)} className="text-indigo-600 hover:text-indigo-900" title="Edit Round Details" disabled={isDeleting}> Edit </button>
-                                                          <button onClick={() => router.push(`/admin/rounds/${round.roundId}/fixtures`)} className="text-blue-600 hover:text-blue-900" title="Manage Fixtures" disabled={isDeleting}> Fixtures </button>
-                                                          {round.status === 'SETUP' && ( <button onClick={() => handleStatusChange(round.roundId, 'OPEN')} className="text-green-600 hover:text-green-900" title="Open Round" disabled={isDeleting}>Open</button> )}
-                                                          {round.status === 'OPEN' && ( <button onClick={() => handleStatusChange(round.roundId, 'CLOSED')} className="text-red-600 hover:text-red-900" title="Close Round" disabled={isDeleting}>Close</button> )}
-                                                          {round.status === 'CLOSED' && ( <button onClick={() => handleTriggerScoring(round.roundId)} className="text-purple-600 hover:text-purple-900" title="Trigger Scoring" disabled={isDeleting}>Score</button> )}
-                                                          <button onClick={() => openDeleteConfirmModal(round)} className="text-red-600 hover:text-red-900 ml-2" title="Delete Round" disabled={isDeleting || actionLoading[round.roundId]}>
-                                                            {isDeleting && roundToDelete?.roundId === round.roundId ? 'Deleting...' : 'Delete'}
-                                                          </button>
-                                                     </>
-                                                )}
-                                            </td>
-                                     </tr>
-                                ))
-                          )}
-                     </tbody>
-                 </table>
+     {/* Delete Button - Show icon always, disable if not SETUP */}
+     <Button
+         variant="ghost" size="sm"
+         className={round.status === 'SETUP' ? "text-gray-400 hover:text-red-400 hover:bg-red-900/30" : "text-gray-600 cursor-not-allowed"} // Subtle default/disabled, red hover only if enabled
+         onClick={() => round.status === 'SETUP' ? openDeleteModal(round) : undefined}
+         disabled={isDeleting || isUpdating || round.status !== 'SETUP'}
+         isLoading={isDeletingThis} // Show loading spinner specifically when deleting this row
+         title={round.status !== 'SETUP' ? "Can only delete rounds in SETUP status" : "Delete Round"}
+     >
+         {/* Show warning or trash icon based on disabled status */}
+         {round.status !== 'SETUP' ?
+            <FaExclamationTriangle className="h-4 w-4" /> :
+            <FaTrashAlt className="h-3.5 w-3.5" />
+         }
+         <span className="sr-only">Delete</span>
+     </Button>
+ </TableCell>
+                                        </TableRow>
+                                    );
+                                })}
+                            </TableBody>
+                        </Table>
+                    </div>
+                 )}
             </div>
 
             {/* Edit Round Modal */}
@@ -308,7 +357,7 @@ export default function AdminRoundsPage() {
                      onClose={handleCloseEditModal}
                      onSave={handleUpdateRound}
                      error={editError}
-                     isLoading={actionLoading[editingRound.roundId] || false}
+                     isLoading={isUpdating}
                  />
              )}
 
@@ -328,6 +377,7 @@ export default function AdminRoundsPage() {
                     }
                     confirmText="Delete Round"
                     isConfirming={isDeleting}
+                    confirmButtonVariant="danger"
                 />
              )}
 

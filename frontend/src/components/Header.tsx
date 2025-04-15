@@ -3,127 +3,135 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
-import { usePathname } from 'next/navigation';
-
-import Avatar from './Avatar'; // Import the Avatar component
+import { usePathname, useRouter } from 'next/navigation';
+import Avatar from './Avatar';
+import { Button } from './ui/Button'; // Using Button from ui directory
+// Import icons needed now and for next steps
+import { FaHome, FaClipboardList, FaPoll, FaTrophy, FaUserCog, FaSignOutAlt } from 'react-icons/fa';
+import { clsx } from 'clsx'; // Import clsx for easier class management
 
 export default function Header() {
-    const { user, logout, isLoading } = useAuth(); // Get user state and functions from context
-    const pathname = usePathname(); // Hook to get the current URL path
+    const { user, logout, isLoading } = useAuth();
+    const pathname = usePathname();
+    const router = useRouter();
 
-    // Function to handle logout action
     const handleLogout = () => {
         logout();
+        router.push('/login');
+        // Redirect logic will be handled later
     };
 
-    // Helper function to determine if a navigation link is active
-    const isActive = (href: string) => pathname === href;
+    // Updated isActive to handle base dashboard route specifically
+    const isActive = (href: string) => {
+        if (href === '/admin') {
+            return pathname?.startsWith(href);
+        }
+        if (href === '/dashboard') { // Exact match for dashboard/home
+             return pathname === href;
+        }
+        // Exact match for others by default (can adjust if needed)
+        return pathname === href;
+    };
+
+    // Link styling classes - Using rounded-sm
+    const linkBaseClasses = "text-sm px-3 py-1.5 rounded-sm transition-colors duration-150 ease-in-out flex items-center"; // Use rounded-sm
+    const linkInactiveClasses = "text-gray-300";
+    const linkActiveClasses = "bg-gray-700 text-white font-medium";
+    // Admin link styles removed as Button component handles variants
 
     return (
-        // Header container styling
-        <header className="bg-gray-800 text-white shadow-md sticky top-0 z-50">
-            {/* Navigation bar layout */}
-            <nav className="container mx-auto px-4 py-3 flex justify-between items-center">
+        <header className="bg-gray-800 border-b border-gray-700 shadow-sm sticky top-0 z-50 h-16">
+            <nav className="w-full px-4 md:px-6 py-2 flex justify-between items-center h-full">
 
-                {/* Left Side: Logo/Brand Name */}
-                <div className="text-xl font-bold">
-                    {/* Link to Dashboard if logged in, otherwise to the home/login page */}
-                    <Link href={user ? "/dashboard" : "/"} className="hover:text-gray-300">
-                        Predictor Game
+                {/* Left Side: Logo */}
+                <div className="flex-shrink-0">
+                    <Link href={user ? "/dashboard" : "/"} className="block" title="Tactical Guessing Home">
+                         <Image src="/tactical-guessing-logo.png" alt="Tactical Guessing Logo" width={180} height={36} priority />
                     </Link>
                 </div>
 
                 {/* Right Side: Navigation Links & Authentication Status */}
-                <div className="flex items-center space-x-3 sm:space-x-4">
-                    {/* Display loading indicator while auth state is being determined */}
+                <div className="flex items-center space-x-1 md:space-x-2">
+                    {/* Loading State */}
                     {isLoading ? (
-                        <span className="text-sm italic">Loading...</span>
+                        <div className="flex items-center space-x-4">
+                            <div className="h-5 w-16 bg-gray-700 rounded animate-pulse"></div>
+                            <div className="h-8 w-8 bg-gray-700 rounded-full animate-pulse"></div>
+                        </div>
                     )
-                    /* Display content based on whether a user is logged in */
+                    /* Logged-in User View */
                     : user ? (
-                        // --- Links and User Info for Logged-In Users ---
                         <>
-                            {/* --- Conditional Navigation Links based on Role --- */}
+                            {/* --- Navigation Links --- */}
+                             {/* Added Home Link with Icon */}
+                             <Link href="/dashboard" className={`${linkBaseClasses} ${isActive('/dashboard') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
+                                <FaHome className="mr-1.5 h-4 w-4" /> {/* Added icon */}
+                                Home
+                             </Link>
 
-                            {/* Predictions Link: Visible only if user is NOT a VISITOR */}
                             {user.role !== 'VISITOR' && (
-                                <Link
-                                    href="/predictions"
-                                    className={`text-sm px-2 py-1 rounded ${isActive('/predictions') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}
-                                >
-                                    Predictions
+                                <Link href="/predictions" className={`${linkBaseClasses} ${isActive('/predictions') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
+                                    <FaClipboardList className="mr-1.5 h-4 w-4" /> Predictions
                                 </Link>
                             )}
-
-                            {/* Match Results Link: Visible to ALL logged-in users */}
-                            <Link
-                                href="/results"
-                                className={`text-sm px-2 py-1 rounded ${isActive('/results') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}
-                            >
-                                Match Results
+                            <Link href="/results" className={`${linkBaseClasses} ${isActive('/results') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
+                            <FaPoll className="mr-1.5 h-4 w-4" /> Results
                             </Link>
-
-                            {/* Standings Link: Visible to ALL logged-in users */}
-                            <Link
-                                href="/standings"
-                                className={`text-sm px-2 py-1 rounded ${isActive('/standings') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}
-                            >
-                                Standings
+                            <Link href="/standings" className={`${linkBaseClasses} ${isActive('/standings') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
+                            <FaTrophy className="mr-1.5 h-4 w-4" /> Standings
                             </Link>
+                            {/* --- End Navigation Links --- */}
 
-                            {/* Profile Link: Visible only if user is NOT a VISITOR */}
-                            {user.role !== 'VISITOR' && (
-                                <Link
-                                    href="/profile"
-                                    className={`text-sm px-2 py-1 rounded ${isActive('/profile') || pathname?.startsWith('/profile/settings') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}
-                                >
-                                    Profile
+
+                            {/* --- Admin/User/Logout Section --- */}
+                            <div className="flex items-center space-x-2 pl-2 md:pl-3 border-l border-gray-600">
+
+                                {/* Admin Panel Icon Button */}
+                                {user.role === 'ADMIN' && (
+                                    <Link href="/admin" passHref legacyBehavior>
+                                         <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            title="Admin Panel"
+                                            aria-label="Admin Panel"
+                                            // Using clsx for cleaner active state on button
+                                            className={clsx(
+                                                'text-gray-300 hover:bg-gray-700 hover:text-white',
+                                                isActive('/admin') && 'bg-gray-700 text-white' // Active class
+                                            )}
+                                         >
+                                             <FaUserCog className="h-5 w-5" />
+                                         </Button>
+                                    </Link>
+                                )}
+
+                                {/* Avatar Link to Profile */}
+                                <Link href={user.role !== 'VISITOR' ? "/profile" : "#"} className={user.role === 'VISITOR' ? 'pointer-events-none block' : 'block'} title="View Profile">
+                                     <Avatar fullAvatarUrl={user?.avatarUrl} name={user.name} size="sm" className="border-2 border-gray-600 hover:border-accent transition-colors"/>
                                 </Link>
-                            )}
 
-                            {/* Admin Panel Link: Visible only if user role is ADMIN */}
-                            {user.role === 'ADMIN' && (
-                                 <Link
-                                     href="/admin"
-                                     className={`text-sm px-2 py-1 rounded ${pathname?.startsWith('/admin') ? 'bg-yellow-600 text-white' : 'text-yellow-400 hover:bg-yellow-600 hover:text-white'}`}
-                                 >
-                                     Admin Panel
-                                 </Link>
-                            )}
-                            {/* --- End Conditional Navigation Links --- */}
-
-
-                            {/* --- User Avatar and Logout Section --- */}
-                            <div className="flex items-center space-x-2 pl-2 border-l border-gray-600"> {/* Optional visual separator */}
-                                {/* Display User Avatar */}
-                                <Avatar
-                                    fullAvatarUrl={user?.avatarUrl} // Use optional chaining for safety
-                                    name={user.name}
-                                    size="sm" // Specifies the size (w-8 h-8 based on Avatar component)
-                                    className="border border-gray-600" // Optional subtle border around avatar
-                                />
-                                {/* Logout Button */}
-                                <button
-                                    onClick={handleLogout}
-                                    className="bg-red-600 hover:bg-red-700 text-white text-sm font-medium py-1 px-2 sm:px-3 rounded transition duration-150 ease-in-out"
-                                    title={`Logout ${user.name}`} // Tooltip for accessibility
-                                >
-                                    Logout
-                                </button>
+                                {/* Logout Icon Button */}
+                               <Button
+                                   variant="ghost"
+                                   size="icon"
+                                   onClick={handleLogout}
+                                   disabled={isLoading}
+                                   className="text-gray-300 hover:bg-gray-700 hover:text-white" // Standard hover
+                                   title="Logout" aria-label="Logout"
+                               >
+                                   <FaSignOutAlt className="h-5 w-5"/>
+                               </Button>
                             </div>
-                            {/* --- End User Avatar and Logout Section --- */}
+                            {/* --- End Admin/User/Logout Section --- */}
                         </>
                     )
-                    /* Display links for Logged-Out Users */
+                    /* Logged-Out User View */
                     : (
                         <>
-                            <Link href="/login" className={`text-sm px-2 py-1 rounded ${isActive('/login') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}>
-                                Login
-                            </Link>
-                            <Link href="/register" className={`text-sm px-2 py-1 rounded ${isActive('/register') ? 'bg-gray-700' : 'hover:bg-gray-700 hover:text-gray-100'}`}>
-                                Register
-                            </Link>
+                            <Link href="/login" className={`${linkBaseClasses} ${isActive('/login') ? linkActiveClasses : linkInactiveClasses}`}> Login </Link>
+                            <Link href="/register" className={`${linkBaseClasses} ${isActive('/register') ? linkActiveClasses : linkInactiveClasses}`}> Register </Link>
                         </>
                     )}
                 </div>

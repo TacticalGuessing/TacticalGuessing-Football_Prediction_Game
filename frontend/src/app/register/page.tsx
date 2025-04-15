@@ -1,9 +1,15 @@
-// frontend/src/app/register/page.tsx
+// frontend/src/app/register/page.tsx // Adjusted path assumption
 'use client';
-import React, { useState } from 'react';
+import React, { useState, FormEvent } from 'react';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { registerUser } from '@/lib/api';
+import { registerUser, ApiError } from '@/lib/api';
+// --- Import UI Components ---
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Label } from '@/components/ui/Label';
+// --- End UI Imports ---
 
 export default function RegisterPage() {
   const [name, setName] = useState('');
@@ -13,45 +19,61 @@ export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault(); setError(null); setIsLoading(true);
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null); setIsLoading(true);
     try {
-      await registerUser({ name, email, password });
+      await registerUser({ name: name.trim(), email, password }); // Trim name
       router.push('/login?registered=true');
     } catch (err) {
-      console.error('Registration failed:', err);
-      setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
+      let message = 'Registration failed.';
+      if (err instanceof ApiError) {
+        message = err.status === 409 ? "Email already registered." : err.message;
+      } else if (err instanceof Error) { message = err.message; }
+      setError(message); console.error('Registration failed:', err);
     } finally { setIsLoading(false); }
   };
 
+  // Removed local input/label classes
+
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-100">
-      <div className="p-8 bg-white rounded shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Register</h2>
-        {error && <p className="mb-4 text-center text-red-500 bg-red-100 p-2 rounded">{error}</p>}
-        <form onSubmit={handleSubmit}>
-           {/* Name Input */}
-           <div className="mb-4">
-             <label htmlFor="name" className="block text-gray-700 mb-2">Name</label>
-             <input type="text" id="name" value={name} onChange={(e) => setName(e.target.value)} required className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700" disabled={isLoading}/>
+    <div className="flex items-center justify-center min-h-screen bg-gray-900 px-4
+                   bg-cover bg-center bg-no-repeat bg-[url('/BG01.png')]"> {/* Added px-4 for small screen padding */}
+      {/* Consistent Card Styling */}
+      <div className="relative p-8 bg-gray-800/90 dark:bg-gray-800/90 backdrop-blur-sm rounded-lg shadow-xl w-full max-w-md border border-gray-700">
+        <div className="flex justify-center mb-6">
+          <Image src="/tactical-guessing-logo.png" alt="Tactical Guessing Logo" width={250} height={50} priority />
+        </div>
+        {/* Consistent Heading Style */}
+        <h2 className="text-xl font-semibold mb-6 text-center text-gray-100">-Create Your Account-</h2>
+
+        {error && ( <div role="alert" className="mb-4 text-center text-red-300 bg-red-900/30 border border-red-700/50 p-3 rounded-md text-sm">{error}</div> )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+           {/* Use Label & Input */}
+           <div className="space-y-1.5"> {/* Group label and input */}
+             <Label htmlFor="name">Name</Label>
+             <Input type="text" id="name" autoComplete="name" value={name} onChange={(e) => setName(e.target.value)} required disabled={isLoading} />
            </div>
-           {/* Email Input */}
-           <div className="mb-4">
-             <label htmlFor="email" className="block text-gray-700 mb-2">Email</label>
-             <input type="email" id="email" value={email} onChange={(e) => setEmail(e.target.value)} required className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700" disabled={isLoading}/>
+           <div className="space-y-1.5">
+             <Label htmlFor="email">Email</Label>
+             <Input type="email" id="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} required disabled={isLoading} />
            </div>
-           {/* Password Input */}
-           <div className="mb-6">
-             <label htmlFor="password" className="block text-gray-700 mb-2">Password</label>
-             <input type="password" id="password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-700" disabled={isLoading}/>
-             <p className="text-xs text-gray-500 mt-1">Minimum 6 characters.</p>
+           <div className="space-y-1.5 mb-1"> {/* Reduced mb */}
+             <Label htmlFor="password">Password</Label>
+             <Input type="password" id="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} required minLength={6} disabled={isLoading} aria-describedby="password-hint" />
+             <p id="password-hint" className="text-xs text-gray-400 mt-1">Minimum 6 characters.</p>
            </div>
-           {/* Submit Button */}
-           <button type="submit" disabled={isLoading} className={`w-full py-2 px-4 rounded text-white font-semibold ${isLoading ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50`}>
+           {/* Use Button */}
+           <Button type="submit" variant="primary" isLoading={isLoading} className="w-full !mt-6"> {/* Added !mt-6 */}
              {isLoading ? 'Registering...' : 'Register'}
-           </button>
+           </Button>
         </form>
-        <p className="mt-6 text-center text-gray-600"> Already have an account?{' '} <Link href="/login" className="text-blue-600 hover:underline">Login here</Link> </p>
+
+        <p className="mt-6 text-center text-sm text-gray-400">
+            Already have an account?{' '}
+            <Link href="/login" className="font-medium text-accent hover:text-amber-300 hover:underline"> Login here </Link>
+        </p>
       </div>
     </div>
   );

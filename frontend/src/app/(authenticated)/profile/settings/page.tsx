@@ -2,355 +2,226 @@
 'use client';
 
 import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
-import { useAuth } from '@/context/AuthContext'; // Using the hook
+import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { setTeamName, uploadAvatar, ApiError } from '@/lib/api'; // Import both API functions and ApiError
-import Image from 'next/image';
-import { FaUserCircle } from 'react-icons/fa'; // Default icon
+import { setTeamName, uploadAvatar } from '@/lib/api';
+//import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
-// Example Spinner component (replace with your actual implementation if you have one)
-const Spinner = () => (
-    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-    </svg>
-);
-
+// --- UI Component Imports ---
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { Label } from '@/components/ui/Label';
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
+import Avatar from '@/components/Avatar'; // Assuming your display Avatar component is here
+//import Spinner from '@/components/ui/Spinner';
+import { FaUserEdit, FaImage, FaUpload, FaSave } from 'react-icons/fa'; // Added relevant icons
 
 export default function ProfileSettingsPage() {
-    // --- Authentication and Router Hooks ---
+    // --- Hooks ---
     const { user, token, isLoading: isAuthLoading, updateUserContext } = useAuth();
-    const router = useRouter(); // Get router instance
-
-    // --- Role Check and Redirect Effect ---
-    useEffect(() => {
-        // Redirect if loading is finished and user is a VISITOR
-        if (!isAuthLoading && user && user.role === 'VISITOR') {
-            console.log('[SettingsPage] Visitor detected, redirecting to dashboard.');
-            toast.error("Visitors cannot access profile settings."); // Optional feedback
-            router.replace('/dashboard'); // Redirect away
-        }
-    }, [user, isAuthLoading, router]);
-    // --- End Role Check ---
-
-    // State for Team Name
-    const [teamNameInput, setTeamNameInput] = useState<string>('');
-
-    // State for Avatar Upload
-    const [selectedFile, setSelectedFile] = useState<File | null>(null);
-    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const router = useRouter();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    // Shared state for loading and error display for both forms
-    const [isSaving, setIsSaving] = useState<boolean>(false); // Shared loading state
-    const [error, setError] = useState<string | null>(null);   // Shared error message
+    // --- State ---
+    const [teamNameInput, setTeamNameInput] = useState<string>('');
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+    const [isSavingTeamName, setIsSavingTeamName] = useState<boolean>(false);
+    const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
+    const [error, setError] = useState<string | null>(null);
 
-    // Effect to initialize team name input when user context loads/changes
+    // --- Role Check Effect ---
     useEffect(() => {
-        if (user) {
-            setTeamNameInput(user.teamName || '');
+        if (!isAuthLoading && user && user.role === 'VISITOR') {
+            toast.error("Visitors cannot access settings.");
+            router.replace('/dashboard');
         }
-    }, [user]);
+    }, [user, isAuthLoading, router]);
 
-    // Effect to clean up object URL for avatar preview
-    useEffect(() => {
-        // Revoke the object URL to avoid memory leaks when component unmounts or preview changes
-        return () => {
-            if (previewUrl) {
-                URL.revokeObjectURL(previewUrl);
-            }
-        };
-    }, [previewUrl]);
+    // --- Initialization and Cleanup Effects ---
+    useEffect(() => { if (user) { setTeamNameInput(user.teamName || ''); } }, [user]);
+    useEffect(() => { return () => { if (previewUrl) { URL.revokeObjectURL(previewUrl); } }; }, [previewUrl]);
 
-    // --- Team Name Handler ---
+    // --- Handlers ---
     const handleTeamNameSave = async (e: FormEvent) => {
         e.preventDefault();
-        if (!token || isSaving || !user) return;
-
-        if (teamNameInput === (user.teamName || '')) {
-            toast.success("No changes to save for Team Name.");
-            return;
-        }
-
-        setIsSaving(true);
-        setError(null);
-        const originalTeamName = user.teamName || '';
+        if (!token || isSavingTeamName || isUploadingAvatar || !user || teamNameInput === (user.teamName || '')) return;
+        setIsSavingTeamName(true); setError(null);
         const toastId = toast.loading('Updating team name...');
-
         try {
-            const updatedUser = await setTeamName(teamNameInput, token);
-            updateUserContext(updatedUser); // Update context
-            toast.success('Team Name updated successfully!', { id: toastId });
-        } catch (err: unknown) {
-            console.error("Failed to update team name:", err);
-            const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "An unknown error occurred.");
-            setError(`Team Name Error: ${message}`);
-            toast.error(`Update failed: ${message}`, { id: toastId });
-            setTeamNameInput(originalTeamName); // Revert input on error
-        } finally {
-            setIsSaving(false);
-        }
+            const updatedUser = await setTeamName(teamNameInput.trim(), token); // Trim name
+            updateUserContext(updatedUser);
+            toast.success('Team Name updated!', { id: toastId });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to update team name.";
+            setError(message); toast.error(`Update failed: ${message}`, { id: toastId });
+            // Don't revert input on error, let user see what they typed
+        } finally { setIsSavingTeamName(false); }
     };
 
-    // --- Avatar Handlers ---
     const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
-        setError(null); // Clear previous errors on new selection
-        const files = event.target.files;
-        if (files && files.length > 0) {
-            const file = files[0];
-            const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-            const maxSize = 5 * 1024 * 1024; // 5MB
-
-            if (!allowedTypes.includes(file.type)) {
-                setError('Invalid file type. Please select a JPG, PNG, GIF, or WEBP image.');
-                setSelectedFile(null);
-                 if (previewUrl) URL.revokeObjectURL(previewUrl); // Clean up previous preview if invalid file selected
-                 setPreviewUrl(null);
-                 event.target.value = ''; // Reset file input visually
-                return;
-            }
-            if (file.size > maxSize) {
-                setError('File is too large. Maximum size is 5MB.');
-                setSelectedFile(null);
-                if (previewUrl) URL.revokeObjectURL(previewUrl); // Clean up previous preview if invalid file selected
-                setPreviewUrl(null);
-                event.target.value = ''; // Reset file input visually
-                return;
-            }
-
-            setSelectedFile(file);
-            // Create a new preview URL
-            const newPreviewUrl = URL.createObjectURL(file);
-            // Clean up *previous* preview URL *before* setting the new one
-            if (previewUrl) {
-                 URL.revokeObjectURL(previewUrl);
-            }
-            setPreviewUrl(newPreviewUrl);
-
-        } else { // No file selected or selection cancelled
-            setSelectedFile(null);
-            if (previewUrl) { // Clean up preview if selection was cancelled
-                URL.revokeObjectURL(previewUrl);
-            }
-            setPreviewUrl(null);
-        }
+        setError(null); const file = event.target.files?.[0];
+        if (!file) { setSelectedFile(null); setPreviewUrl(null); return; }
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']; const maxSize = 5 * 1024 * 1024;
+        if (!allowedTypes.includes(file.type)) { setError('Invalid file type (JPG, PNG, GIF, WEBP only).'); toast.error('Invalid file type.'); return; }
+        if (file.size > maxSize) { setError('File too large (Max 5MB).'); toast.error('File too large (Max 5MB).'); return; }
+        setSelectedFile(file);
+        const newPreviewUrl = URL.createObjectURL(file);
+        if (previewUrl) URL.revokeObjectURL(previewUrl);
+        setPreviewUrl(newPreviewUrl);
     };
 
-    const triggerFileInput = () => {
-        fileInputRef.current?.click();
-    };
+    const triggerFileInput = () => fileInputRef.current?.click();
 
-    const handleAvatarUpload = async () => { // Renamed from handleUpload to be specific
-        if (!selectedFile || !token || isSaving) return;
-
-        setIsSaving(true);
-        setError(null);
+    const handleAvatarUpload = async () => {
+        if (!selectedFile || !token || isUploadingAvatar || isSavingTeamName) return;
+        setIsUploadingAvatar(true); setError(null);
         const toastId = toast.loading('Uploading avatar...');
-
         try {
             const updatedUserData = await uploadAvatar(selectedFile, token);
-
-            console.log("[SettingsPage] Received updated user data after upload:", updatedUserData);
-
-            updateUserContext(updatedUserData); // Update context with new user data (incl. avatarUrl)
-            toast.success('Avatar updated successfully!', { id: toastId });
-
-            // Reset upload state after successful upload
-            setSelectedFile(null);
-             if (previewUrl) {
-                 URL.revokeObjectURL(previewUrl); // Clean up the preview URL
-             }
-             setPreviewUrl(null);
-             if (fileInputRef.current) { // Clear the file input visually
-                 fileInputRef.current.value = '';
-             }
-
+            updateUserContext(updatedUserData);
+            toast.success('Avatar updated!', { id: toastId });
+            setSelectedFile(null); if (previewUrl) URL.revokeObjectURL(previewUrl); setPreviewUrl(null);
+            if (fileInputRef.current) fileInputRef.current.value = '';
         } catch (err) {
-            console.error("Avatar upload failed:", err);
-            const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "An unknown error occurred.");
-            setError(`Avatar Upload Error: ${message}`); // Add context to error message
-            toast.error(`Upload failed: ${message}`, { id: toastId });
-            // Keep selected file on error, allowing user to retry
-        } finally {
-            setIsSaving(false);
-        }
+            const message = err instanceof Error ? err.message : "Failed to upload avatar.";
+            setError(message); toast.error(`Upload failed: ${message}`, { id: toastId });
+        } finally { setIsUploadingAvatar(false); }
     };
 
     // --- Render Logic ---
+    if (isAuthLoading) return <div className="p-6 text-center text-gray-400">Loading profile...</div>;
+    if (!user || user.role === 'VISITOR') return <div className="p-6 text-center text-red-400">Access Denied or User Not Found.</div>; // Handle visitor case more gracefully
 
-    if (isAuthLoading) {
-        return <div className="p-4 md:p-6 text-center">Loading profile...</div>;
-    }
-
-    if (!user) {
-        return <div className="p-4 md:p-6 text-center text-red-600">User not found. Please log in.</div>;
-    }
-
-     // --- Determine the final source URL for the current avatar Image ---
-     // No base URL construction needed here anymore.
-     // We just need to check if the URL from the user context is absolute.
-     let finalCurrentAvatarSrc: string | null = null;
-     if (user.avatarUrl) {
-         if (user.avatarUrl.startsWith('http://') || user.avatarUrl.startsWith('https://')) {
-            finalCurrentAvatarSrc = user.avatarUrl; // Use the absolute URL directly
-         } else {
-            // This case indicates potentially bad data if it happens
-            console.warn(`Profile Settings page received unexpected relative avatarUrl: ${user.avatarUrl}`);
-            // Decide on fallback behavior - maybe display nothing or a default?
-            // For now, let it be null so the icon fallback shows.
-         }
-     }
-     // ----------------------------------------------------------------
+    // Use consistent container style
+    const sectionContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700";
 
     return (
-        <div className="container mx-auto p-4 md:p-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800 dark:text-gray-100 mb-6">Profile Settings</h1>
+        <div className="space-y-8 p-4 md:p-6 max-w-3xl mx-auto"> {/* Constrain width, add more vertical space */}
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-100 flex items-center">
+                <FaUserEdit className="mr-3 text-gray-400" /> Profile Settings
+            </h1>
 
-            {/* --- User Info & Team Name Section --- */}
-            <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 max-w-2xl mx-auto mb-8">
-                {/* Display non-editable info */}
-                <div className="mb-4 grid grid-cols-2 gap-x-4 gap-y-2">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Name:</p>
-                    <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{user.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Email:</p>
-                    <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{user.email}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Role:</p>
-                    <p className="font-medium text-gray-800 dark:text-gray-100">{user.role}</p>
-                </div>
-
-                <hr className="my-4 border-gray-200 dark:border-gray-600"/>
-
-                {/* Team Name Form */}
-                <form onSubmit={handleTeamNameSave} className="space-y-4">
-                    <div>
-                        <label htmlFor="teamName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Team Name (Optional)
-                        </label>
-                        <input
-                            type="text"
-                            id="teamName"
-                            name="teamName"
-                            value={teamNameInput}
-                            onChange={(e) => setTeamNameInput(e.target.value)}
-                            placeholder="Enter your team name"
-                            maxLength={50}
-                            className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100 dark:bg-gray-700 dark:text-gray-200 dark:placeholder-gray-400 dark:disabled:bg-gray-600"
-                            disabled={isSaving}
-                        />
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Displayed in standings. Leave blank to use your name.</p>
-                    </div>
-
-                    <div className="text-right pt-2">
-                        <button
-                            type="submit"
-                            disabled={isSaving || teamNameInput === (user?.teamName || '')}
-                            className="inline-flex justify-center items-center py-2 px-6 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            {isSaving ? (
-                                <> <Spinner /> Saving... </>
-                             ) : 'Save Team Name'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            {/* --- Avatar Upload Section --- */}
-            <div className="bg-white dark:bg-gray-800 p-4 md:p-6 rounded-lg shadow border border-gray-200 dark:border-gray-700 max-w-2xl mx-auto">
-                <h2 className="text-xl font-semibold mb-4 text-gray-700 dark:text-gray-200">Profile Picture</h2>
-                {/* Flex container for Image and Controls */}
-                <div className="flex flex-col sm:flex-row items-center space-y-4 sm:space-y-0 sm:space-x-6">
-
-                    {/* Avatar Display */}
-                    <div className="flex-shrink-0 w-24 h-24 relative rounded-full overflow-hidden border border-gray-300 dark:border-gray-600 shadow"> {/* Added overflow-hidden and border here */}
-                        {previewUrl ? (
-                            // Use standard img for object URL preview for simplicity
-                            // eslint-disable-next-line @next/next/no-img-element
-                            <img
-                                src={previewUrl}
-                                alt="Avatar Preview"
-                                className="h-full w-full object-cover" // Ensure it covers the container
-                            />
-                        ) : finalCurrentAvatarSrc ? ( // Use the correctly determined source
-                            <Image
-                                src={finalCurrentAvatarSrc} // Pass the final source
-                                alt="Current Avatar"
-                                fill // Use fill layout
-                                sizes="(max-width: 768px) 100vw, 96px" // Provide appropriate sizes based on container
-                                className="object-cover" // Ensure it covers the container
-                                priority={false}
-                                onError={(e) => {
-                                    // Handle potential loading errors for the current avatar
-                                    console.warn("Failed to load current avatar image:", finalCurrentAvatarSrc);
-                                    // Hide the broken image element
-                                    (e.target as HTMLImageElement).style.display = 'none';
-                                    // Optionally, trigger state to show the fallback icon here
-                                }}
-                            />
-                        ) : (
-                            // Fallback icon if no preview and no finalCurrentAvatarSrc
-                            <FaUserCircle className="h-full w-full text-gray-400 dark:text-gray-500" />
-                        )}
-                         {/* Render fallback icon specifically on error if Image onError is triggered */}
-                         {/* This requires state management which adds complexity, so hiding is simpler for now */}
-                    </div>
-                    {/* End Avatar Display */}
-
-                    {/* Upload Controls */}
-                    <div className="flex-grow">
-                        {/* Hidden file input */}
-                        <input
-                            type="file"
-                            accept="image/jpeg, image/png, image/gif, image/webp"
-                            ref={fileInputRef}
-                            onChange={handleFileChange}
-                            className="hidden"
-                            aria-label="Upload profile picture"
-                            disabled={isSaving}
-                        />
-                        {/* Button to trigger the hidden input */}
-                        <button
-                            type="button"
-                            onClick={triggerFileInput}
-                            disabled={isSaving}
-                            className="px-4 py-2 bg-blue-500 text-white dark:bg-blue-600 dark:hover:bg-blue-700 rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            Choose Image
-                        </button>
-
-                        {/* Conditional block for Upload button and selected file name */}
-                        {selectedFile && (
-                            <div className="mt-3 text-sm text-gray-600 dark:text-gray-400">
-                                <p className="truncate">Selected: <span className="font-medium dark:text-gray-300">{selectedFile.name}</span></p>
-                                {/* Upload Avatar button */}
-                                <button
-                                    type="button"
-                                    onClick={handleAvatarUpload}
-                                    disabled={isSaving || !selectedFile}
-                                    className="mt-2 inline-flex items-center px-4 py-2 bg-green-500 text-white dark:bg-green-600 dark:hover:bg-green-700 rounded hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isSaving ? (
-                                        <> <Spinner /> Uploading... </>
-                                    ) : (
-                                        'Upload Avatar'
-                                    )}
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                    {/* End Upload Controls */}
-
-                </div> {/* End Flex container */}
-            </div>
-            {/* --- End Avatar Upload Section --- */}
-
-            {/* --- Combined Error Display Area --- */}
+            {/* Combined Error Display */}
             {error && (
-                <div className="mt-6 max-w-2xl mx-auto p-3 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-700/50 rounded-md text-center">
-                    <p className="text-sm text-red-700 dark:text-red-300 font-medium">{error}</p>
+                <div role="alert" className="p-3 bg-red-900/30 border border-red-700/50 rounded-md text-center">
+                    <p className="text-sm text-red-300 font-medium">{error}</p>
                 </div>
             )}
 
-        </div> // End main container div
+            {/* --- Team Name Section --- */}
+            <Card className={sectionContainerClasses}> {/* Use Card for structure */}
+                <CardHeader>
+                    <CardTitle>Team Name</CardTitle>
+                    <CardDescription>This name will be shown in the standings. Leave blank to use your registered name.</CardDescription>
+                </CardHeader>
+                <form onSubmit={handleTeamNameSave}>
+                    <CardContent>
+                        <Label htmlFor="teamName" className="sr-only">Team Name</Label> {/* Screen reader only label */}
+                        <Input
+                            id="teamName"
+                            type="text"
+                            value={teamNameInput}
+                            onChange={(e) => setTeamNameInput(e.target.value)}
+                            placeholder={user.name} // Show registered name as placeholder
+                            maxLength={50}
+                            disabled={isSavingTeamName || isUploadingAvatar}
+                            aria-describedby="teamNameHelp"
+                        />
+                        <p id="teamNameHelp" className="text-xs text-gray-400 mt-1.5">Max 50 characters.</p>
+                    </CardContent>
+                    <CardFooter className="flex justify-end">
+                        <Button
+                            type="submit"
+                            size="sm"
+                            disabled={isSavingTeamName || isUploadingAvatar || teamNameInput === (user?.teamName || '')}
+                            isLoading={isSavingTeamName}
+                        >
+                             <FaSave className="mr-2 h-4 w-4" /> Save Team Name
+                        </Button>
+                    </CardFooter>
+                </form>
+            </Card>
+
+            {/* --- Avatar Upload Section --- */}
+            <Card className={sectionContainerClasses}> {/* Use Card */}
+                <CardHeader>
+                    <CardTitle>Profile Picture</CardTitle>
+                    <CardDescription>Upload a new avatar (Max 5MB: JPG, PNG, GIF, WEBP).</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+                        {/* Avatar Display */}
+                        <div className="flex-shrink-0">
+                            {/* Use AvatarDisplay component, pass preview if available */}
+                            <Avatar
+                                fullAvatarUrl={previewUrl || user.avatarUrl} // Show preview preferentially
+                                name={user.name}
+                                size="lg" // Larger size for settings page
+                                className="ring-2 ring-offset-2 ring-offset-gray-800 ring-gray-600" // Add ring for emphasis
+                            />
+                        </div>
+
+                        {/* Upload Controls */}
+                        <div className="flex-grow w-full space-y-3">
+                             {/* Hidden file input */}
+                            <input type="file" accept="image/jpeg, image/png, image/gif, image/webp" ref={fileInputRef} onChange={handleFileChange} className="hidden" disabled={isUploadingAvatar || isSavingTeamName}/>
+                            {/* Button to trigger */}
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={triggerFileInput}
+                                disabled={isUploadingAvatar || isSavingTeamName}
+                                className="w-full sm:w-auto" // Responsive width
+                            >
+                                <FaImage className="mr-2 h-4 w-4" /> Choose Image...
+                            </Button>
+
+                            {/* Selected file info and Upload button */}
+                            {selectedFile && (
+                                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-gray-700/50">
+                                    <p className="text-sm text-gray-400 truncate flex-grow">
+                                        Selected: <span className="font-medium text-gray-300">{selectedFile.name}</span>
+                                    </p>
+                                    <Button
+                                        type="button"
+                                        variant="secondary" // Accent color
+                                        size="sm"
+                                        onClick={handleAvatarUpload}
+                                        disabled={isUploadingAvatar || isSavingTeamName || !selectedFile}
+                                        isLoading={isUploadingAvatar}
+                                        className="w-full sm:w-auto flex-shrink-0" // Responsive width
+                                    >
+                                        <FaUpload className="mr-2 h-4 w-4" /> Upload Avatar
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+             {/* --- Display Basic Info (Read Only) --- */}
+             <Card className={sectionContainerClasses}>
+                 <CardHeader>
+                     <CardTitle>Account Information</CardTitle>
+                     <CardDescription>Your registered details (cannot be changed).</CardDescription>
+                 </CardHeader>
+                 <CardContent>
+                     <dl className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                         <div className="sm:col-span-1"><dt className="font-medium text-gray-400">Name</dt></div>
+                         <div className="sm:col-span-2"><dd className="text-gray-100">{user.name}</dd></div>
+
+                         <div className="sm:col-span-1"><dt className="font-medium text-gray-400">Email</dt></div>
+                         <div className="sm:col-span-2"><dd className="text-gray-100">{user.email}</dd></div>
+
+                         <div className="sm:col-span-1"><dt className="font-medium text-gray-400">Role</dt></div>
+                         <div className="sm:col-span-2"><dd className="text-gray-100">{user.role}</dd></div>
+                     </dl>
+                 </CardContent>
+             </Card>
+
+        </div> // End Page Container
     );
 }

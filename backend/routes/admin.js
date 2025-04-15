@@ -2,16 +2,24 @@
 const express = require('express');
 const { PrismaClient, Prisma } = require('@prisma/client'); // Add Prisma here
 const asyncHandler = require('express-async-handler'); // Add asyncHandler
-const { protect, admin } = require('../middleware/authMiddleware'); // Import middleware
+const { protect, admin, } = require('../middleware/authMiddleware'); // Import middleware
 
 const prisma = new PrismaClient();
 const router = express.Router();
+
+// --- ADD Controller import ---
+//const { handleResetGameData } = require('../src/controllers/adminDevController.ts'); // Correct path
 
 // Middleware: Apply protect and admin checks to all routes in this file
 router.use(protect);
 router.use(admin);
 
 // --- Admin Routes will go here ---
+
+// --- Define the NEW Dev Reset Route ---
+// Use isAdmin middleware specifically for this route
+//router.post('/dev/reset-game-data', isAdmin, asyncHandler(handleResetGameData)); // Added asyncHandler wrap
+// --- End New Route ---
 
 // Example Test Route
 router.get('/test', (req, res) => {

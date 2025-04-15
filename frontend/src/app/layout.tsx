@@ -1,17 +1,14 @@
 // frontend/src/app/layout.tsx
 import type { Metadata } from "next";
-// Import directly from the specific Geist font package paths
-import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
+import { GeistSans } from 'geist/font/sans'; // Correct import for Geist Sans
+// import { GeistMono } from 'geist/font/mono'; // Keep commented if you decide not to use it globally
+import AppProviders from "@/providers/AppProviders"; // Your context providers wrapper
+import { Toaster } from 'react-hot-toast'; // Keep Toaster import
 import "./globals.css";
-import AppProviders from "@/providers/AppProviders"; // Assuming this wraps AuthProvider or similar
-import { Toaster } from 'react-hot-toast'; // <<< Make sure this import is present
-
-// Font variables are applied directly in the HTML tag className
 
 export const metadata: Metadata = {
-  title: "Football Prediction Game",
-  description: "Predict football scores and compete!",
+  title: "Tactical Guessing - Football Prediction Game", // Slightly more descriptive title
+  description: "Predict football scores and compete with friends!",
 };
 
 export default function RootLayout({
@@ -20,33 +17,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // Apply the CSS variable classes directly from the imported font objects
-    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
-      <body>
-        {/* === ADD TOASTER HERE === */}
-        <Toaster
-           position="top-center" // You can adjust position: 'top-right', 'bottom-center', etc.
-           reverseOrder={false}  // Keep default order
-           // You can add more customization options if needed later:
-           // toastOptions={{
-           //   duration: 5000, // Default duration
-           //   style: { // Default styles
-           //      background: '#363636',
-           //      color: '#fff',
-           //   },
-           // }}
-        />
-        {/* ======================= */}
+    // Apply Geist Sans font variable class to the <html> tag.
+    // Remove Geist Mono if not used globally.
+    <html lang="en" className={GeistSans.variable}>
 
-        {/* Assuming AppProviders includes your AuthProvider and potentially other context providers */}
+      {/* Apply base dark theme background and default text color to the <body> tag */}
+      {/* 'antialiased' improves font rendering */}
+      <body className="bg-gray-900 text-gray-200 antialiased">
+
+        {/* Render the Toaster component for notifications */}
+        <Toaster
+           position="top-center"
+           reverseOrder={false}
+           // You might customize toastOptions later based on your theme
+        />
+
+        {/* Wrap children with AppProviders (which includes AuthProvider) */}
         <AppProviders>
-           {/* Ensure your globals.css or tailwind config uses these variables */}
-           {/* e.g., font-family: var(--font-geist-sans); */}
-           {/* Using <main> here is fine, or you could have another div */}
-           <main className="antialiased">
-              {children}
-           </main>
+           {/*
+             The main content structure (like adding Header/Footer or centering content)
+             should typically happen in more specific layout files (e.g., /app/(authenticated)/layout.tsx)
+             or directly within page components if no nested layout exists.
+             The <main> tag here is okay, but often redundant if child layouts/pages also use <main>.
+             We ensure the base styles are on <body>.
+           */}
+           {children}
         </AppProviders>
+
       </body>
     </html>
   );

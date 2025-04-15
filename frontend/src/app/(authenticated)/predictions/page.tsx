@@ -6,6 +6,10 @@ import { useAuth } from '@/context/AuthContext';
 import { getActiveRound, savePredictions, generateRandomUserPredictions, ActiveRoundResponse, PredictionPayload, ApiError } from '@/lib/api'; // Import necessary functions and types
 import { toast } from 'react-hot-toast';
 import { useRouter } from 'next/navigation';
+import { formatDateTime } from '@/utils/formatters';
+import Image from 'next/image';
+import { Button } from '@/components/Button';
+import { FaClipboardList } from 'react-icons/fa';
 //import CountdownTimer from '@/components/CountdownTimer'; // Assuming you have this component
 // Import other necessary components like Spinner, etc.
 
@@ -19,6 +23,11 @@ export default function PredictionsPage() {
     // --- Authentication and Router Hooks ---
     const { user, token, isLoading: isAuthLoading } = useAuth(); // Get user object including role
     const router = useRouter(); // Get router instance
+
+    // --- Consistent Input Styling ---
+    const scoreInputClasses = "block w-full px-1 py-1 text-center border border-gray-600 rounded-md shadow-sm bg-gray-700 text-gray-100 placeholder-gray-400 focus:outline-none focus:ring-1 focus:ring-offset-0 focus:ring-accent focus:border-accent disabled:opacity-50 disabled:bg-gray-600 disabled:cursor-not-allowed sm:text-sm";
+    //const jokerRadioClasses = "h-5 w-5 text-accent bg-gray-600 border-gray-500 focus:ring-accent focus:ring-offset-gray-800 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50";
+    // --- End Input Styling ---
 
     // --- Role Check and Redirect Effect ---
     useEffect(() => {
@@ -198,127 +207,183 @@ export default function PredictionsPage() {
 
     // --- Render Logic ---
     if (isAuthLoading) {
-        return <div className="p-4 md:p-6 text-center">Authenticating...</div>;
+        return <div className="p-6 text-center text-gray-400">Authenticating...</div>;
     }
      if (isLoadingRound) {
-        return <div className="p-4 md:p-6 text-center">Loading prediction round...</div>;
+        return <div className="p-6 text-center text-gray-400">Loading prediction round...</div>;
     }
     if (roundError) {
-        return <div className="p-4 md:p-6 text-center text-red-600 bg-red-50 rounded border border-red-200">{roundError}</div>;
+        return <div role="alert" className="p-4 md:p-6 text-center text-red-300 bg-red-900/30 border border-red-700/50 rounded">{roundError}</div>;
     }
     if (!activeRound) {
-        return <div className="p-4 md:p-6 text-center text-gray-600">There is currently no active round open for predictions.</div>;
+        return <div className="p-4 md:p-6 text-center text-gray-400">There is currently no active round open for predictions.</div>;
     }
 
     // Check if deadline has passed
     const isDeadlinePassed = new Date(activeRound.deadline) < new Date();
 
+    // --- ADD THIS LINE ---
+    // Determine combined disabled state for inputs/buttons
+    const isSubmitDisabled = isSaving || isGenerating || isDeadlinePassed;
+    // --- END ADDED LINE ---
+
     return (
-        <div className="container mx-auto p-4 md:p-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
-                Make Predictions: <span className="text-indigo-600">{activeRound.name}</span>
+        <div className="container mx-auto p-4 md:p-4">
+          <h1 className="text-xl md:text-2xl font-bold text-gray-100 mb-4 flex items-center"> {/* Added flex, reduced mb */}
+              <FaClipboardList className="mr-3 text-blue-400" /> {/* Added Icon */}
+                Predictions: <span className="text-accent ml-2">{activeRound.name}</span> {/* Added ml-2 */}
             </h1>
-            <div className="mb-6 text-sm text-gray-600 flex items-center justify-between flex-wrap gap-2">
-                <span>Deadline:</span>
-                {/* Assume CountdownTimer component handles formatting and countdown */}
-                <span className="font-medium text-red-600">
-    {new Date(activeRound.deadline).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}
-</span>
+            <div className={`mb-6 rounded-lg p-4 border ${ // Keep outer container styles
+                isDeadlinePassed
+                    ? 'bg-red-900/20 border-red-700/50 text-red-300'
+                    : 'bg-gray-800/60 border-gray-700/80 text-gray-300'
+            }`}>
+                 {/* Let elements flow, use gap for spacing, consistent text size */}
+                <div className="flex items-baseline flex-wrap gap-x-2"> {/* Use items-baseline, smaller gap */}
+                    <span className="text-sm font-medium">Prediction Deadline:</span>
+                    {/* Use same text size, adjust color based on deadline */}
+                    <span className={`font-semibold text-sm ${isDeadlinePassed ? 'text-red-300' : 'text-accent'}`}>
+                         {formatDateTime(activeRound.deadline)}
+                    </span>
+                    {/* Optional: Add CountdownTimer component here */}
+                    {/* {!isDeadlinePassed && activeRound.deadline && <CountdownTimer deadline={activeRound.deadline} />} */}
+                </div>
+                {/* Deadline passed message */}
+                {isDeadlinePassed && (
+                    <p className="mt-2 text-center text-sm text-red-300 font-semibold italic">
+                        Predictions are now closed for this round.
+                    </p>
+                 )}
             </div>
 
-            {isDeadlinePassed && (
-                <div className="mb-6 p-3 text-center bg-red-100 border border-red-300 text-red-700 rounded font-medium">
-                    The deadline for this round has passed. Predictions are closed.
-                </div>
-            )}
-
             <form onSubmit={handleSave}>
-                <div className="bg-white p-4 md:p-6 rounded-lg shadow border border-gray-200 space-y-4">
+            <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 md:p-6 space-y-3">
 
                      {/* Fixture List */}
                      {activeRound.fixtures.map((fixture) => {
-                         const currentPrediction = predictions.get(fixture.fixtureId);
-                         const isJoker = jokerFixtureId === fixture.fixtureId;
+    // Get current prediction state for this fixture
+    const currentPrediction = predictions.get(fixture.fixtureId);
+    // Determine if this fixture is the selected joker
+    const isJoker = jokerFixtureId === fixture.fixtureId;
 
-                         return (
-                             <div key={fixture.fixtureId} className={`p-3 rounded border ${isJoker ? 'border-yellow-400 bg-yellow-50' : 'border-gray-200'} grid grid-cols-12 gap-2 items-center`}>
-                                {/* Joker Radio */}
-                                 <div className="col-span-1 flex justify-center">
-                                    <input
-                                        type="radio"
-                                        name="joker"
-                                        value={fixture.fixtureId}
-                                        checked={isJoker}
-                                        onChange={() => handleJokerChange(fixture.fixtureId)}
-                                        disabled={isSaving || isGenerating || isDeadlinePassed}
-                                        className="form-radio h-5 w-5 text-yellow-500 focus:ring-yellow-400 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
-                                        aria-label={`Set Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}`}
-                                     />
-                                 </div>
-                                {/* Home Team */}
-                                <label htmlFor={`home-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-right truncate pr-1">{fixture.homeTeam}</label>
-                                {/* Home Score */}
-                                <div className="col-span-1">
-                                    <input
-                                        type="text" // Use text to allow empty string, handle parsing
-                                        inputMode="numeric" // Hint for mobile keyboards
-                                        pattern="[0-9]*" // Pattern for validation (optional)
-                                        id={`home-${fixture.fixtureId}`}
-                                        value={currentPrediction?.homeInput ?? ''}
-                                        onChange={(e) => handleInputChange(fixture.fixtureId, 'home', e.target.value)}
-                                        className="w-full px-1 py-1 text-center border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100"
-                                        maxLength={2}
-                                        disabled={isSaving || isGenerating || isDeadlinePassed}
-                                        aria-label={`Predicted score for ${fixture.homeTeam}`}
-                                    />
-                                </div>
-                                {/* Separator */}
-                                <div className="col-span-1 text-center font-semibold">-</div>
-                                {/* Away Score */}
-                                <div className="col-span-1">
-                                     <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        pattern="[0-9]*"
-                                        id={`away-${fixture.fixtureId}`}
-                                        value={currentPrediction?.awayInput ?? ''}
-                                        onChange={(e) => handleInputChange(fixture.fixtureId, 'away', e.target.value)}
-                                        className="w-full px-1 py-1 text-center border border-gray-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm disabled:bg-gray-100"
-                                        maxLength={2}
-                                        disabled={isSaving || isGenerating || isDeadlinePassed}
-                                        aria-label={`Predicted score for ${fixture.awayTeam}`}
-                                    />
-                                </div>
-                                {/* Away Team */}
-                                <label htmlFor={`away-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-left truncate pl-1">{fixture.awayTeam}</label>
-                                 {/* Match Time (optional display) */}
-                                 <div className="col-span-12 sm:col-span-2 text-xs text-gray-500 text-center sm:text-right pt-1 sm:pt-0">
-                                     {new Date(fixture.matchTime).toLocaleString([], { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })}
-                                 </div>
-                            </div>
-                         );
-                     })}
+    // Return the styled JSX for each fixture row
+    return (
+        <div
+                                    key={fixture.fixtureId}
+                                    // Default uses container bg (or bg-gray-900). Joker uses accent border + subtle accent bg.
+                                    className={`p-3 rounded-md border ${
+                                        isJoker
+                    ? 'border-yellow-500 bg-yellow-900/10 shadow-md ring-1 ring-yellow-600' // Gold highlight style
+                    : 'border-gray-700/80'
+            } grid grid-cols-12 gap-x-2 gap-y-1 items-center transition-all duration-150`}
+                                >
+            {/* Column 1: Joker Radio */}
+            <div className="col-span-1 flex justify-center items-center">
+               <button
+                   type="button"
+                   onClick={() => handleJokerChange(fixture.fixtureId)}
+                   disabled={isSubmitDisabled}
+                   className={`p-1 rounded-full transition-all duration-150  ${
+                       isSubmitDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 hover:opacity-100'
+                   } ${isJoker ? 'opacity-100 scale-110' : 'opacity-60'}`} // Brighter/bigger if selected
+                   title={isJoker ? "Clear Joker" : "Set as Joker (double points)"}
+                   aria-label={isJoker ? `Clear Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}` : `Set Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}`}
+               >
+                   <Image
+                       src="/Joker.png" // Path from /public
+                       alt="Joker Card Icon"
+                       width={40} // Adjust size as needed
+                       height={40} // Adjust size as needed
+                       className={`object-contain ${isJoker ? '' : 'grayscale'}`} // Grayscale if not selected
+                   />
+               </button>
+            </div>
+
+            {/* Column 2: Home Team Name */}
+            <label htmlFor={`home-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-right truncate pr-1">
+                {fixture.homeTeam}
+            </label>
+
+            {/* Column 3: Home Score Input */}
+            <div className="col-span-1">
+                <input
+                    type="text" inputMode="numeric" pattern="[0-9]*"
+                    id={`home-${fixture.fixtureId}`}
+                    value={currentPrediction?.homeInput ?? ''}
+                    onChange={(e) => handleInputChange(fixture.fixtureId, 'home', e.target.value)}
+                    className={scoreInputClasses} // Apply themed input style
+                    maxLength={2}
+                    disabled={isSubmitDisabled}
+                    aria-label={`Predicted score for ${fixture.homeTeam}`}
+                />
+            </div>
+
+            {/* Column 4: Score Separator */}
+            <div className="col-span-1 text-center font-semibold text-gray-400">-</div>
+
+            {/* Column 5: Away Score Input */}
+            <div className="col-span-1">
+                <input
+                    type="text" inputMode="numeric" pattern="[0-9]*"
+                    id={`away-${fixture.fixtureId}`}
+                    value={currentPrediction?.awayInput ?? ''}
+                    onChange={(e) => handleInputChange(fixture.fixtureId, 'away', e.target.value)}
+                    className={scoreInputClasses} // Apply themed input style
+                    maxLength={2}
+                    disabled={isSubmitDisabled}
+                    aria-label={`Predicted score for ${fixture.awayTeam}`}
+                />
+            </div>
+
+            {/* Column 6: Away Team Name */}
+            <label htmlFor={`away-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-left truncate pl-1">
+                {fixture.awayTeam}
+            </label>
+
+            {/* Column 7: Match Time */}
+            <div className="col-span-12 sm:col-span-2 text-xs text-gray-400 text-center sm:text-right pt-1 sm:pt-0">
+                {formatDateTime(fixture.matchTime)} {/* Use formatter */}
+            </div>
+        </div> // End Fixture Row Div
+    ); // End Return for map item
+})}
 
                      {/* Actions Area */}
-                     <div className="pt-4 flex flex-col sm:flex-row justify-between items-center gap-4 border-t border-gray-200">
+                     <div className="pt-4 flex flex-col sm:flex-row justify items-center gap-4 border-t border-gray-200">
                          {/* Generate Random Button */}
-                         <button
-                            type="button"
-                            onClick={handleGenerateRandom}
-                            disabled={isSaving || isGenerating || isDeadlinePassed}
-                            className="px-4 py-2 border border-gray-400 text-gray-700 rounded-md hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-150 ease-in-out text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                             {isGenerating ? 'Generating...' : 'Generate Random'}
-                         </button>
+                         <Button // Use Button component
+                        type="button"
+                        variant="primary" // Use secondary variant (Amber)
+                        size="sm" // Make it slightly smaller? Or keep md?
+                        onClick={handleGenerateRandom}
+                        disabled={isSubmitDisabled || isGenerating} // isSubmitDisabled includes deadline check
+                        isLoading={isGenerating} // Pass loading state
+                        className="p-2" // Adjust padding if using icon only
+                        title="Generate Random Predictions (0-4 goals)"
+                        aria-label="Generate Random Predictions"
+                    >
+                         {/* Replace text/icon logic with variant from Button component */}
+                         <Image
+                             src="/Random.png" // Ensure this exists
+                             alt="" // Alt managed by title/aria-label
+                             width={20} height={20}
+                             aria-hidden="true"
+                         />
+                         <span className="sr-only">Generate Random Predictions</span>
+                    </Button>
+                     {/* --- End Generate Random --- */}
 
-                        {/* Save Button */}
-                         <button
-                             type="submit"
-                             disabled={isSaving || isGenerating || isDeadlinePassed}
-                             className="px-6 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                             {isSaving ? 'Saving...' : 'Save Predictions'}
-                         </button>
+
+                    {/* Save Button - Keep as is */}
+                    <Button
+                        type="submit"
+                        variant="primary"
+                        size="md"
+                        isLoading={isSaving}
+                        disabled={isSubmitDisabled}
+                    >
+                         {isSaving ? 'Saving...' : 'Save Predictions'}
+                    </Button>
                      </div>
 
                 </div>
