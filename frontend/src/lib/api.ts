@@ -274,6 +274,24 @@ export interface RoundSummaryResponse {
 
 // --- END: Round Summary Interfaces ---
 
+// Add NewsItem Type
+export interface NewsItem {
+    newsItemId: number;
+    content: string;
+    createdAt: string; // ISO Date String
+    postedBy?: { // Make postedBy optional in case relation was optional
+        name: string;
+    } | null; // Can be null if relation is optional
+}
+
+// --- Add Prediction Status Type ---
+export interface PlayerPredictionStatus {
+    userId: number;
+    name: string;
+    avatarUrl?: string | null;
+    hasPredicted: boolean;
+}
+
 // --- Custom API Error Class ---
 export class ApiError extends Error {
     status: number;
@@ -290,6 +308,38 @@ export class ApiError extends Error {
         }
     }
 }
+
+interface HighlightLeader {
+    userId: number;
+    name: string;
+    avatarUrl?: string | null;
+    totalPoints: number; // For overall leader
+}
+
+interface HighlightTopScorer {
+    userId: number;
+    name: string;
+    avatarUrl?: string | null;
+    score: number; // Score for the specific round
+}
+
+export interface DashboardHighlightsResponse {
+    lastRoundHighlights: {
+        roundId: number;
+        roundName: string;
+        topScorers: HighlightTopScorer[];
+    } | null;
+    userLastRoundStats: {
+        roundId: number;
+        score: number;
+        rank: number;
+    } | null;
+    overallLeader: {
+        leaders: HighlightLeader[];
+        leadingScore: number;
+    } | null;
+}
+
 // --- End Custom API Error Class ---
 
 // --- Helper Function ---
@@ -1309,6 +1359,149 @@ export const resetGameDataForDev = async (token: string): Promise<{ message: str
     }
 };
 // --- End Development Reset Function ---
+
+/**
+ * Deletes a user (Admin only).
+ */
+/**
+ * Deletes a user (Admin only).
+ */
+export async function deleteUserAdmin(userId: number, token: string): Promise<{ message: string }> {
+    // URL construction is correct now (relative to API_BASE_URL which includes /api)
+    const url = `${API_BASE_URL}/admin/users/${userId}`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        // --- RESTORE THIS LINE ---
+        const response = await axios.delete<{ message: string }>(url, config);
+        // --- END RESTORE ---
+
+        return response.data; // This line makes the function return the promised value
+
+    } catch (error) {
+        console.error(`API Error deleting user ${userId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to delete user';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches aggregated data for the dashboard highlights section.
+ */
+export async function getDashboardHighlights(token: string): Promise<DashboardHighlightsResponse> {
+    // API_BASE_URL should already include /api
+    const url = `${API_BASE_URL}/dashboard/highlights`; // No extra /api
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.get<DashboardHighlightsResponse>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching dashboard highlights:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load highlights';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches latest news items.
+ * @param limit Optional number of items to fetch
+ */
+export async function getNewsItems(limit: number = 5): Promise<NewsItem[]> {
+    // Assumes API_BASE_URL includes /api and the endpoint is public
+    const url = `${API_BASE_URL}/news?limit=${limit}`; // No extra /api, add limit param
+    // No token needed if public, add config if protected
+    // const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        // If public, no config needed for axios.get
+        const response = await axios.get<NewsItem[]>(url);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching news items:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load news items';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+
+// --- Add Admin function to create news ---
+/**
+ * Creates a new news item (Admin only).
+ */
+export async function createNewsItemAdmin(content: string, token: string): Promise<NewsItem> {
+    // Assumes API_BASE_URL includes /api
+    const url = `${API_BASE_URL}/admin/news`; // No extra /api
+    const body = { content };
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.post<NewsItem>(url, body, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error creating news item:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to create news item';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Deletes a news item (Admin only).
+ */
+export async function deleteNewsItemAdmin(newsItemId: number, token: string): Promise<{ message: string }> {
+    // Assumes API_BASE_URL includes /api
+    const url = `${API_BASE_URL}/admin/news/${newsItemId}`; // Correct endpoint
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.delete<{ message: string }>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error deleting news item ${newsItemId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to delete news item';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches the prediction submission status for all players for a given round (Admin only).
+ */
+export async function getPredictionStatusAdmin(roundId: number, token: string): Promise<PlayerPredictionStatus[]> {
+    // Assumes API_BASE_URL includes /api
+    const url = `${API_BASE_URL}/admin/rounds/${roundId}/prediction-status`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.get<PlayerPredictionStatus[]>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error fetching prediction status for round ${roundId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load prediction status';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
 
 // ============================
 // ==========================================================

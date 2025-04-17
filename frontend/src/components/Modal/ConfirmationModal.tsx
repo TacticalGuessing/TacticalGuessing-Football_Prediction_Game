@@ -1,22 +1,22 @@
 // frontend/src/components/Modal/ConfirmationModal.tsx
 'use client';
 
-import React from 'react'; // Import useEffect from React
-
-// --- UI Component Imports ---
-import { Button, ButtonProps } from '@/components/ui/Button'; // Assuming ButtonProps is now exported
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/Card'; // Removed CardDescription
+import React from 'react';
+import { Button, ButtonProps } from '@/components/ui/Button';
+// Ensure Card and its parts are imported correctly
+import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/Card';
+import { clsx } from 'clsx'; // Import clsx if needed for combining classes
 
 interface ConfirmationModalProps {
     isOpen: boolean;
     onClose: () => void;
     onConfirm: () => void;
     title: string;
-    message: React.ReactNode; // Allow JSX in the message
+    message: React.ReactNode;
     confirmText?: string;
     cancelText?: string;
-    isConfirming?: boolean; // Loading state for confirm button
-    confirmButtonVariant?: ButtonProps['variant']; // Use variant type from ButtonProps
+    isConfirming?: boolean;
+    confirmButtonVariant?: ButtonProps['variant'];
 }
 
 export default function ConfirmationModal({
@@ -28,55 +28,50 @@ export default function ConfirmationModal({
     confirmText = 'Confirm',
     cancelText = 'Cancel',
     isConfirming = false,
-    confirmButtonVariant = 'primary', // Default to primary, can be overridden (e.g., 'danger')
+    confirmButtonVariant = 'primary',
 }: ConfirmationModalProps) {
 
-    // --- Moved useEffect HERE (before the early return) ---
-    // Optional: Prevent background scroll when modal is open
     React.useEffect(() => {
-        // Only add/remove overflow style if modal is actually open
         if (isOpen) {
             document.body.style.overflow = 'hidden';
         }
-        // Cleanup function ALWAYS resets overflow when component unmounts
-        // or BEFORE the effect runs again if isOpen changes from true to false
         return () => {
             document.body.style.overflow = 'unset';
         };
-    }, [isOpen]); // Added isOpen dependency
-    // --- END MOVED useEffect ---
+    }, [isOpen]);
 
 
-    // Early return if not open
     if (!isOpen) {
         return null;
     }
 
-    // --- Refactored JSX using UI Components ---
     return (
-        // Modal backdrop
         <div
             className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4"
-            onClick={onClose} // Close on backdrop click
+            onClick={onClose}
         >
-            {/* Use Card for modal content - stop propagation so clicking card doesn't close it */}
+            {/* Explicitly apply background and border to the Card */}
             <Card
-                className="w-full max-w-md dark:bg-gray-800"
-                onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside card
+                className={clsx(
+                    "w-full max-w-md", // Keep width constraint
+                    "bg-gray-800",    // Explicit background surface color
+                    "border border-gray-700" // Explicit default border color
+                    // Add other base Card classes if needed, clsx handles merging
+                )}
+                onClick={(e) => e.stopPropagation()}
             >
                 <CardHeader>
+                    {/* Ensure CardTitle uses appropriate text color (likely handled by CardTitle component) */}
                     <CardTitle>{title}</CardTitle>
-                     {/* Optionally add description if needed via props later */}
-                     {/* <CardDescription>Optional description here</CardDescription> */}
                 </CardHeader>
                 <CardContent>
-                    {/* Render the message content (can be simple text or complex JSX) */}
-                    <div className="text-sm text-gray-600 dark:text-gray-300 space-y-2">
+                    {/* Update message text color for dark theme consistency */}
+                    <div className="text-sm text-gray-300 space-y-2"> {/* Use primary text color */}
                         {message}
                     </div>
                 </CardContent>
                 <CardFooter className="flex justify-end space-x-3">
-                     {/* Cancel Button */}
+                     {/* Buttons should inherit styles correctly */}
                     <Button
                         variant="outline"
                         onClick={onClose}
@@ -84,13 +79,11 @@ export default function ConfirmationModal({
                     >
                         {cancelText}
                     </Button>
-                    {/* Confirm Button */}
                     <Button
-                        // Use the passed variant prop, default to primary/danger
-                        variant={confirmButtonVariant}
+                        variant={confirmButtonVariant} // Uses 'danger' in the delete case
                         onClick={onConfirm}
                         disabled={isConfirming}
-                        isLoading={isConfirming} // Pass loading state
+                        isLoading={isConfirming}
                     >
                         {confirmText}
                     </Button>

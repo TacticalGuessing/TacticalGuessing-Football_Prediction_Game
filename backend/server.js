@@ -7,6 +7,9 @@ const path = require('path'); // <<< CORRECT way to import the path module
 // but routers use it, so it's fine.
 // const db = require('./db');
 
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const newsRoutes = require('./routes/newsRoutes');
+
 // Import Routers
 const authRoutes = require('./routes/auth');
 const roundRoutes = require('./routes/rounds');
@@ -62,6 +65,8 @@ app.use('/api/fixtures', fixturesRoutes); // Use consistent variable name
 app.use('/api/standings', standingsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', usersRoutes);
+app.use('/api/dashboard', dashboardRoutes); // Mount the dashboard routes
+app.use('/api/news', newsRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

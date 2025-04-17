@@ -3,12 +3,16 @@ const express = require('express');
 const { PrismaClient, Prisma } = require('@prisma/client'); // Add Prisma here
 const asyncHandler = require('express-async-handler'); // Add asyncHandler
 const { protect, admin, } = require('../middleware/authMiddleware'); // Import middleware
+const dashboardController = require('../src/controllers/dashboardController');
+
+const adminRoundController = require('../src/controllers/adminRoundController');
+
 
 const prisma = new PrismaClient();
 const router = express.Router();
 
 // --- ADD Controller import ---
-//const { handleResetGameData } = require('../src/controllers/adminDevController.ts'); // Correct path
+const { handleResetGameData } = require('../src/controllers/adminDevController.js'); // Correct path
 
 // Middleware: Apply protect and admin checks to all routes in this file
 router.use(protect);
@@ -16,9 +20,12 @@ router.use(admin);
 
 // --- Admin Routes will go here ---
 
+router.post('/news', asyncHandler(dashboardController.createNewsItem));
+router.delete('/news/:newsItemId', asyncHandler(dashboardController.deleteNewsItem));
+
 // --- Define the NEW Dev Reset Route ---
 // Use isAdmin middleware specifically for this route
-//router.post('/dev/reset-game-data', isAdmin, asyncHandler(handleResetGameData)); // Added asyncHandler wrap
+router.post('/dev/reset-game-data', asyncHandler(handleResetGameData)); // Added asyncHandler wrap
 // --- End New Route ---
 
 // Example Test Route
@@ -26,6 +33,8 @@ router.get('/test', (req, res) => {
     console.log(`[${new Date().toISOString()}] Admin Test Route accessed by User ID: ${req.user.userId}`);
     res.status(200).json({ message: 'Admin route test successful', adminUser: req.user.name });
 });
+
+router.get('/rounds/:roundId/prediction-status', asyncHandler(adminRoundController.getPredictionStatusForRound));
 
 // --- NEW: GET /api/admin/users ---
 /**
@@ -222,5 +231,68 @@ router.patch('/users/:userId/role', protect, asyncHandler(async (req, res) => {
     }
 }));
 // --- END NEW Endpoint ---
+
+/**
+ * @route   DELETE /api/admin/users/:userId
+ * @desc    Delete a non-admin user
+ * @access  Admin
+ */
+router.delete('/users/:userId', asyncHandler(async (req, res) => {
+    // Note: protect and admin middleware are already applied via router.use()
+
+    // 1. Get userId from path parameters
+    const userIdToDelete = parseInt(req.params.userId, 10);
+    if (isNaN(userIdToDelete)) {
+        res.status(400);
+        throw new Error('Invalid user ID provided.');
+    }
+
+    // 2. Prevent admin from deleting themselves
+    if (userIdToDelete === req.user.userId) {
+        res.status(400);
+        throw new Error('Admins cannot delete their own account via this interface.');
+    }
+
+    // 3. Check if target user is an Admin (prevent deletion)
+    const targetUser = await prisma.user.findUnique({
+        where: { userId: userIdToDelete },
+        select: { role: true }
+    });
+
+    if (!targetUser) {
+        res.status(404); // Not Found is appropriate if user doesn't exist
+        throw new Error('User not found.');
+    }
+
+    if (targetUser.role === 'ADMIN') {
+        res.status(403); // Forbidden
+        throw new Error('Cannot delete another Admin account.');
+    }
+
+    // 4. Perform the deletion
+    // IMPORTANT: Consider cascading deletes in schema.prisma or manually delete related data (predictions) first if needed!
+    // Assuming predictions should be deleted when a user is deleted (add onDelete: Cascade to schema or handle here)
+    try {
+        // Example: If cascade delete isn't set for predictions, delete them first
+        // await prisma.prediction.deleteMany({ where: { userId: userIdToDelete } });
+
+        // Now delete the user
+        await prisma.user.delete({
+            where: { userId: userIdToDelete },
+        });
+
+        console.log(`Admin ${req.user.userId} deleted user ${userIdToDelete}`);
+        res.status(200).json({ message: `User ID ${userIdToDelete} deleted successfully.` });
+
+    } catch (error) {
+        console.error(`Error deleting user ${userIdToDelete}:`, error);
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            res.status(404); // Record to delete not found
+            throw new Error('User not found.');
+        }
+        // Re-throw other errors for global handler
+        throw error;
+    }
+}));
 
 module.exports = router;

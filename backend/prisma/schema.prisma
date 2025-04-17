@@ -21,6 +21,7 @@ model User {
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
   rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]
+  postedNews    NewsItem[]   @relation("PostedNews")
 
   @@map("users")
 }
@@ -79,3 +80,16 @@ model Prediction {
   @@unique([userId, fixtureId], map: "predictions_user_id_fixture_id_key")
   @@map("predictions")
 }
+
+// --- ADD THIS MODEL ---
+model NewsItem {
+  newsItemId  Int      @id @default(autoincrement()) @map("news_item_id")
+  content     String   @db.Text // Use Text for potentially longer content
+  createdAt   DateTime @default(now()) @map("created_at")
+  postedByUserId Int?     @map("posted_by_user_id") // Foreign key field
+  postedBy       User?     @relation("PostedNews", fields: [postedByUserId], references: [userId]) 
+  // Optional: Link to admin who posted it (uncomment if needed)
+  
+  @@map("news_items")
+}
+// --- END ADDED MODEL ---

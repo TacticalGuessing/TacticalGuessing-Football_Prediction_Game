@@ -3,10 +3,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FaTools,FaUsers, FaListOl, FaSearch, FaPlus } from 'react-icons/fa'; // Ensure FaPlus is imported
+import { FaTools, FaUsers, FaListOl, FaSearch, FaPlus, FaNewspaper } from 'react-icons/fa'; // Ensure FaPlus is imported
 import React from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button'; // Ensure Button is imported
+import { IoFileTrayStackedOutline } from 'react-icons/io5';
 
 // Props interface includes the function to open the modal
 interface AdminSidebarProps {
@@ -24,6 +25,8 @@ interface NavLink {
 const adminLinks: NavLink[] = [
   { href: '/admin', label: 'Manage Rounds', icon: <FaListOl /> },
   { href: '/admin/users', label: 'Manage Users', icon: <FaUsers /> },
+  { href: '/admin/news', label: 'Post News', icon: <FaNewspaper />},
+  { href: '/admin/prediction-status', label: 'Prediction Status', icon: < IoFileTrayStackedOutline /> },
   { href: '/admin/audit', label: 'Prediction Audit', icon: <FaSearch /> },
   { href: '/admin/dev', label: 'Dev Tools', icon: <FaTools /> },
 ];
