@@ -1,5 +1,8 @@
 // backend/server.js
 require('dotenv').config(); // Ensure this is at the very top
+
+
+
 const express = require('express');
 const cors = require('cors');
 const path = require('path'); // <<< CORRECT way to import the path module
@@ -30,12 +33,27 @@ const PORT = process.env.PORT || 5001; // Render provides PORT, 5001 is local fa
 
 // ** Replace basic cors() with specific configuration **
 const allowedOrigins = [
-    'http://localhost:3000', // Your local frontend
-    // <<< Add your planned Vercel URL below >>>
-    // Example: Using 'tactical-guessing' in the URL
-    'https://tactical-guessing.vercel.app'
-    // Add any other origins if needed (e.g., specific preview URLs)
+    'http://localhost:3000', // Your local frontend dev
+    'https://tactical-guessing.vercel.app', // Your Vercel deployment URL
+    'https://tacticalguessing.com', // Your custom domain (root)
+    'https://www.tacticalguessing.com' // Your custom domain (www)
 ];
+
+const corsOptions = {
+    origin: function (origin, callback) {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+        // Allow if the origin is in our list
+        if (allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.warn(`CORS blocked for origin: ${origin}`); // Log blocked origins
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
+    credentials: true, // If you need to allow cookies/authorization headers
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
 
 app.use(cors({
     origin: function (origin, callback) {
