@@ -168,7 +168,7 @@ const createNewsItem = async (req, res) => {
             data: {
                 content: content.trim(),
                 postedByUserId: adminUserId,
-                // postedByUserId: req.user.userId, // Uncomment if relation is added
+                // postedByUserId: req.user.userId, // Uncomment if relation is added Adding a change to fore redeploy
             },
             select: {
                 newsItemId: true,
