@@ -317,7 +317,7 @@ export default function DashboardPage() {
 
                     {/* Highlights Card */}
                     <Card className={sectionContainerClasses + " p-2 md:p-3"}>
-                        <CardHeader className="p-0 mb-3"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center"><FaStar className="mr-3 text-yellow-400" /> Highlights</CardTitle></CardHeader>
+                        <CardHeader className="p-0 mb-0"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center"><FaStar className="mr-3 text-yellow-400" /> Highlights</CardTitle></CardHeader>
                         <CardContent className="p-0">{renderHighlightsContent()}</CardContent>
                     </Card>
 

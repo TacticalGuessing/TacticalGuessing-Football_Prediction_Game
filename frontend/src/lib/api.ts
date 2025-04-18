@@ -142,6 +142,37 @@ export interface SimpleRound {
     name: string;
 }
 
+// --- Add User Prediction History Types ---
+export interface UserPredictionRoundInfo {
+    roundId: number;
+    roundName: string;
+    status: string; // e.g., 'OPEN', 'CLOSED', 'COMPLETED'
+}
+
+export interface UserPredictionFixtureInfo {
+    homeTeam: string;
+    awayTeam: string;
+    matchTime: string; // ISO Date String
+    homeScore: number | null;
+    awayScore: number | null;
+}
+
+export interface UserPredictionItem {
+    predictionId: number;
+    fixtureId: number;
+    predictedHomeGoals: number;
+    predictedAwayGoals: number;
+    isJoker: boolean;
+    pointsAwarded: number | null;
+    fixture: UserPredictionFixtureInfo;
+}
+
+export interface UserPredictionResponse {
+    roundInfo: UserPredictionRoundInfo | null; // Null if 'current' requested but none open
+    predictions: UserPredictionItem[];
+}
+// --- End User Prediction History Types ---
+
 // ========================================================
 // ===== STANDING ENTRY INTERFACE - UPDATED ===============
 // ========================================================
@@ -339,6 +370,27 @@ export interface DashboardHighlightsResponse {
         leadingScore: number;
     } | null;
 }
+
+// --- Add User Prediction Stats Types ---
+interface BestRoundInfo {
+    roundId: number;
+    roundName: string;
+    points: number;
+}
+
+interface PointsHistory {
+    roundId: number;
+    roundName: string;
+    points: number;
+}
+
+export interface UserPredictionStatsResponse {
+    overallAccuracy: number; // e.g., 0.65 for 65%
+    averagePointsPerRound: number;
+    bestRound: BestRoundInfo | null;
+    pointsPerRoundHistory: PointsHistory[];
+}
+// --- End User Prediction Stats Types ---
 
 // --- End Custom API Error Class ---
 
@@ -1498,6 +1550,93 @@ export async function getPredictionStatusAdmin(roundId: number, token: string): 
         const message = axios.isAxiosError(error) && error.response?.data?.message
             ? error.response.data.message
             : 'Could not load prediction status';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches prediction statistics for the logged-in user.
+ */
+export async function getUserPredictionStats(token: string): Promise<UserPredictionStatsResponse> {
+    // Assumes API_BASE_URL includes /api
+    const url = `${API_BASE_URL}/users/me/stats/predictions`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.get<UserPredictionStatsResponse>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching user prediction stats:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load prediction stats';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches the logged-in user's predictions for a specific round.
+ * @param roundId The specific round ID or 'current'.
+ * @param token Auth token.
+ */
+export async function getUserPredictionsForRound(roundId: number | 'current', token: string): Promise<UserPredictionResponse> {
+    // Assumes API_BASE_URL includes /api
+    const url = `${API_BASE_URL}/users/me/predictions/${roundId}`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.get<UserPredictionResponse>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error fetching user predictions for round ${roundId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load predictions for this round';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        // Handle case where 'current' round leads to a 404/specific message if desired
+        if (statusCode === 404 && roundId === 'current') {
+             // Optionally return a specific structure or re-throw specific error
+             return { roundInfo: null, predictions: [] }; // Return empty state
+        }
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Sends a request to the backend to initiate password reset.
+ */
+export async function forgotPassword(email: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/auth/forgot-password`; // No extra /api prefix
+    try {
+        const response = await axios.post<{ message: string }>(url, { email });
+        return response.data; // Should contain the generic message
+    } catch (error) {
+        console.error("API Error requesting password reset:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to request password reset';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Sends the reset token and new password to the backend.
+ */
+export async function resetPassword(token: string, password: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/auth/reset-password/${token}`; // No extra /api prefix
+    try {
+        const response = await axios.post<{ message: string }>(url, { password });
+        return response.data; // Should contain success message
+    } catch (error) {
+        console.error("API Error resetting password:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to reset password';
         const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
         throw new ApiError(message, statusCode);
     }

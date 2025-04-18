@@ -78,7 +78,7 @@ const getDashboardHighlights = async (req, res) => {
 
         const lastCompletedRound = await dbClient.round.findFirst({
             where: { status: 'COMPLETED' },
-            orderBy: { deadline: 'desc' },
+            orderBy: { roundId: 'desc' },
             select: { roundId: true, name: true }
         });
 

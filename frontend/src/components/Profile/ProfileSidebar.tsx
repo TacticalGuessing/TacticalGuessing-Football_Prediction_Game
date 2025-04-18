@@ -19,8 +19,8 @@ interface ProfileNavLink {
 const profileLinks: ProfileNavLink[] = [
     { href: '/profile', label: 'View Profile', icon: <FaUser /> },
     { href: '/profile/settings', label: 'Settings', icon: <FaCog /> },
-    { href: '#', label: 'Prediction History', icon: <FaHistory />, disabled: true }, // Placeholder link, disabled
-    { href: '#', label: 'Statistics', icon: <FaChartBar />, disabled: true }, // Placeholder link, disabled
+    { href: '/profile/predictions', label: 'My Predictions', icon: < FaHistory />}, // Placeholder link, disabled
+    { href: '/profile/settings/statistics', label: 'Statistics', icon: < FaChartBar /> }, 
   ];
 
 export default function ProfileSidebar() {

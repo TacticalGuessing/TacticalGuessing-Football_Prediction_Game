@@ -78,7 +78,13 @@ function LoginFormContent() {
       </form>
 
       <p className="mt-6 text-center text-sm text-gray-400">
-        Don&apos;t have an account?{' '}
+        <Link href="/forgot-password" className="font-medium text-accent hover:text-amber-300 hover:underline">
+            Forgot Password?
+        </Link>
+    </p>
+
+      <p className="mt-6 text-center text-sm text-gray-400">
+       
         <Link href="/register" className="font-medium text-accent hover:text-amber-300 hover:underline"> Register here </Link>
       </p>
     </>

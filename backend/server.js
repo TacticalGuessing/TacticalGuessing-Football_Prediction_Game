@@ -19,6 +19,8 @@ const standingsRoutes = require('./routes/standings');
 const fixturesRoutes = require('./routes/fixtures'); // Use one consistent name
 const adminRoutes = require('./routes/admin');
 const usersRoutes = require('./routes/users');
+const userStatsRoutes = require('./routes/userStatsRoutes');
+const userPredictionsRoutes = require('./routes/userPredictionsRoutes');
 
 const app = express();
 // Read port from environment AFTER dotenv has loaded
@@ -67,6 +69,8 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/dashboard', dashboardRoutes); // Mount the dashboard routes
 app.use('/api/news', newsRoutes);
+app.use('/api/users', userStatsRoutes);
+app.use('/api/users', userPredictionsRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

@@ -22,6 +22,8 @@ model User {
   rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]
   postedNews    NewsItem[]   @relation("PostedNews")
+  passwordResetToken       String?   @unique @map("password_reset_token")
+  passwordResetExpires     DateTime? @map("password_reset_expires")
 
   @@map("users")
 }
@@ -87,7 +89,8 @@ model NewsItem {
   content     String   @db.Text // Use Text for potentially longer content
   createdAt   DateTime @default(now()) @map("created_at")
   postedByUserId Int?     @map("posted_by_user_id") // Foreign key field
-  postedBy       User?     @relation("PostedNews", fields: [postedByUserId], references: [userId]) 
+  postedBy       User?     @relation("PostedNews", fields: [postedByUserId], references: [userId])
+  
   // Optional: Link to admin who posted it (uncomment if needed)
   
   @@map("news_items")
