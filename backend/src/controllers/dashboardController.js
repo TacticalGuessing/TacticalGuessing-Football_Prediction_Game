@@ -158,7 +158,12 @@ const createNewsItem = async (req, res) => {
 
     const adminUserId = req.user.userId;
 
+    console.log(`[createNewsItem] Value of dbClient BEFORE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
+    console.log(`[createNewsItem] Value of dbClient.newsItem BEFORE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED'); // <-- ADD LOG
+
     try {
+        console.log(`[createNewsItem] Value of dbClient INSIDE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
+        console.log(`[createNewsItem] Value of dbClient.newsItem INSIDE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED');
         const newsItem = await dbClient.newsItem.create({
             data: {
                 content: content.trim(),
