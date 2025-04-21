@@ -25,6 +25,10 @@ const usersRoutes = require('./routes/users');
 const userStatsRoutes = require('./routes/userStatsRoutes');
 const userPredictionsRoutes = require('./routes/userPredictionsRoutes');
 
+const friendsRoutes = require('./routes/friendsRoutes');
+const userRoutes = require('./routes/userRoutes'); // Or './routes/userRoutes'
+const leagueRoutes = require('./routes/leagueRoutes'); // Or './routes/leagueRoutes'
+
 const app = express();
 // Read port from environment AFTER dotenv has loaded
 const PORT = process.env.PORT || 5001; // Render provides PORT, 5001 is local fallback
@@ -89,6 +93,9 @@ app.use('/api/dashboard', dashboardRoutes); // Mount the dashboard routes
 app.use('/api/news', newsRoutes);
 app.use('/api/users', userStatsRoutes);
 app.use('/api/users', userPredictionsRoutes);
+app.use('/api/friends', friendsRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/leagues', leagueRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

@@ -4,58 +4,9 @@ const dbClient = require('../db.ts').default; // Renamed import
 console.log("DB Client Initialized:", dbClient ? 'OK' : 'UNDEFINED'); // Log confirmation
 
 const { Prisma } = require('@prisma/client'); // Import Prisma if needed for error types
+const { calculateStandings } = require('../utils/scoringUtils');
 
-/**
- * Calculates standings (either for a specific round or overall).
- * @param {number | null} roundId - The ID of the round, or null for overall standings.
- * @returns {Promise<Array<{ userId: number, name: string, avatarUrl: string | null, totalPoints: number, rank: number }>>} - Ranked list of players.
- */
-async function calculateStandings(roundId = null) {
-    console.log(`Calculating standings: ${roundId !== null ? `for round ${roundId}` : 'overall'}...`);
-    try { // Add try...catch within helper for better isolation
-        const pointsAggregation = await dbClient.prediction.groupBy({
-            by: ['userId'],
-            _sum: { pointsAwarded: true },
-            where: {
-                ...(roundId !== null && { roundId: roundId }),
-                pointsAwarded: { not: null },
-                user: { // Filter directly for PLAYER role in the related user
-                    role: 'PLAYER'
-                }
-            },
-            orderBy: { _sum: { pointsAwarded: 'desc' } },
-        });
 
-        const allPlayers = await dbClient.user.findMany({
-            where: { role: 'PLAYER' },
-            select: { userId: true, name: true, avatarUrl: true },
-        });
-
-        const playersWithPoints = allPlayers.map(player => {
-            const pointsData = pointsAggregation.find(agg => agg.userId === player.userId);
-            const totalPoints = pointsData?._sum?.pointsAwarded ?? 0;
-            return { ...player, totalPoints: totalPoints };
-        });
-
-        playersWithPoints.sort((a, b) => b.totalPoints - a.totalPoints);
-
-        let currentRank = 0;
-        let lastTotalPoints = -1;
-        const rankedPlayers = playersWithPoints.map((player, index) => {
-            if (player.totalPoints !== lastTotalPoints) {
-                currentRank = index + 1;
-                lastTotalPoints = player.totalPoints;
-            }
-            return { ...player, rank: currentRank };
-        });
-
-        console.log(`Calculated standings: Found ${rankedPlayers.length} players.`);
-        return rankedPlayers;
-     } catch (error) {
-         console.error(`Error in calculateStandings (roundId: ${roundId}):`, error);
-         throw error; // Re-throw to be caught by the main handler
-     }
-}
 
 
 /**

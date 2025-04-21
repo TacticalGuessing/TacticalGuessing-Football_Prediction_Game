@@ -14,16 +14,20 @@ model User {
   name          String
   email         String    @unique
   passwordHash  String    @map("password_hash")
-  role          String    @default("VISITOR")
+  role          String    @default("PLAYER")
   teamName      String?   @map("team_name")
   avatarUrl     String?   @map("avatar_url") // Future placeholder
   createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
+  updatedAt     DateTime  @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
   rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]
   postedNews    NewsItem[]   @relation("PostedNews")
   passwordResetToken       String?   @unique @map("password_reset_token")
   passwordResetExpires     DateTime? @map("password_reset_expires")
+  sentFriendships     Friendship[] @relation("SentFriendships") // Requests this user sent
+  receivedFriendships Friendship[] @relation("ReceivedFriendships") // Requests this user received
+  createdLeagues    League[]           @relation("LeagueCreator")
+  leagueMemberships LeagueMembership[] @relation("LeagueMember")
 
   @@map("users")
 }
@@ -63,6 +67,38 @@ model Fixture {
   @@map("fixtures")
 }
 
+model League {
+  leagueId      Int      @id @default(autoincrement()) @map("league_id")
+  name          String
+  description   String?  @db.Text
+  creatorUserId Int      @map("creator_user_id")
+  inviteCode    String?  @unique @map("invite_code") // Keep invite code
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  creator       User               @relation("LeagueCreator", fields: [creatorUserId], references: [userId], onDelete: Cascade)
+  memberships   LeagueMembership[] @relation("LeagueMembers")
+
+  @@map("leagues")
+}
+
+model LeagueMembership {
+  membershipId Int      @id @default(autoincrement()) @map("membership_id")
+  leagueId     Int      @map("league_id")
+  userId       Int      @map("user_id")
+  role         String   // 'ADMIN' (creator) or 'MEMBER'
+  joinedAt     DateTime @default(now()) @map("joined_at")
+
+  // Relations
+  league        League   @relation("LeagueMembers", fields: [leagueId], references: [leagueId], onDelete: Cascade)
+  user          User     @relation("LeagueMember", fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@unique([leagueId, userId])
+  @@index([userId])
+  @@map("league_memberships")
+}
+
 model Prediction {
   predictionId        Int     @id @default(autoincrement()) @map("prediction_id")
   userId              Int     @map("user_id")
@@ -94,5 +130,24 @@ model NewsItem {
   // Optional: Link to admin who posted it (uncomment if needed)
   
   @@map("news_items")
+}
+
+model Friendship {
+  id          Int      @id @default(autoincrement())
+  requesterId Int      @map("requester_id") // User who sent the request
+  addresseeId Int      @map("addressee_id") // User who received the request
+  status      String   // 'PENDING', 'ACCEPTED' (Start simple, maybe add 'DECLINED', 'BLOCKED' later)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at") // Use @updatedAt for auto-update
+
+  requester   User     @relation("SentFriendships", fields: [requesterId], references: [userId], onDelete: Cascade)
+  addressee   User     @relation("ReceivedFriendships", fields: [addresseeId], references: [userId], onDelete: Cascade)
+
+  // Ensures a user pair can only have one friendship record between them, regardless of direction
+  // This requires checking both combinations when creating. A simpler alternative is just unique on requester/addressee
+  @@unique([requesterId, addresseeId], map: "friendship_requester_addressee_key")
+  // Index for finding requests received by a user
+  @@index([addresseeId, status])
+  @@map("friendships")
 }
 // --- END ADDED MODEL ---

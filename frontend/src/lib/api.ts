@@ -265,6 +265,32 @@ export interface AdminPredictionDetail {
     };
 }
 
+// --- Add Friend Related Types ---
+
+// Basic user info for displaying friends or requesters
+export interface FriendUser {
+    userId: number;
+    name: string;
+    avatarUrl?: string | null;
+}
+
+// Represents an incoming friend request
+export interface PendingFriendRequest {
+    id: number; // ID of the Friendship record itself
+    requesterId: number;
+    addresseeId: number;
+    status: 'PENDING'; // Explicitly PENDING
+    createdAt: string; // ISO Date string
+    requester: FriendUser; // Details of the user who sent the request
+}
+
+// Simple message response type for actions
+interface FriendActionResponse {
+  message: string;
+  // Optionally include updated friendship record if needed by UI
+  // friendship?: { id: number, status: string, ... };
+}
+
 // --- END: Admin Audit Specific Interfaces ---
 
 // --- NEW: Round Summary Interfaces ---
@@ -391,6 +417,73 @@ export interface UserPredictionStatsResponse {
     pointsPerRoundHistory: PointsHistory[];
 }
 // --- End User Prediction Stats Types ---
+
+// --- Add League Related Types ---
+
+export interface LeagueCreatorInfo {
+    userId: number;
+    name: string;
+}
+
+export interface LeagueMemberInfo { // Info needed for displaying member list
+    userId: number;
+    role: 'ADMIN' | 'MEMBER'; // Role within the league
+    joinedAt: string; // ISO Date string
+    user: FriendUser; // Reuse FriendUser for basic details (id, name, avatar)
+}
+
+// Type for the response when getting details for ONE league
+export interface LeagueDetailsResponse {
+    leagueId: number;
+    name: string;
+    description?: string | null;
+    inviteCode?: string | null; // Only present for league admins
+    createdAt: string; // ISO Date string
+    creator: LeagueCreatorInfo;
+    memberships: LeagueMemberInfo[];
+}
+
+// Type for the response when getting the list of leagues the user is in
+export interface MyLeagueInfo {
+    leagueId: number;
+    name: string;
+    description?: string | null;
+    inviteCode?: string | null; // May or may not be present based on backend logic for list view
+    creator: LeagueCreatorInfo;
+    myLeagueRole: 'ADMIN' | 'MEMBER'; // User's role in this specific league
+    // Optionally add member count if backend provides it: memberCount?: number;
+}
+
+// Type for response after joining a league
+export interface JoinLeagueResponse {
+    message: string;
+    membership: {
+        membershipId: number;
+        role: 'MEMBER'; // Should always be MEMBER when joining
+        joinedAt: string;
+        league: {
+            leagueId: number;
+            name: string;
+        }
+    }
+}
+
+// Type for response after creating a league
+// Backend currently returns: { leagueId, name, description, inviteCode, createdAt }
+// Let's create a matching type
+export interface CreateLeagueResponse {
+     leagueId: number;
+     name: string;
+     description?: string | null;
+     inviteCode?: string | null;
+     createdAt: string; // ISO Date string
+}
+
+// Response type for regeneration
+interface RegenerateCodeResponse {
+    message: string;
+    inviteCode: string; // The NEW invite code
+}
 
 // --- End Custom API Error Class ---
 
@@ -1641,6 +1734,302 @@ export async function resetPassword(token: string, password: string): Promise<{ 
         throw new ApiError(message, statusCode);
     }
 }
+
+// --- Friend API Functions ---
+
+/**
+ * Sends a friend request to a user.
+ */
+export async function sendFriendRequest(addresseeId: number, token: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/friends/requests`; // Mounted under /api/friends
+    const body = { addresseeId };
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.post<{ message: string }>(url, body, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error sending friend request to ${addresseeId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to send friend request';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Gets incoming pending friend requests for the logged-in user.
+ */
+export async function getPendingRequests(token: string): Promise<PendingFriendRequest[]> {
+    const url = `${API_BASE_URL}/friends/requests/pending`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.get<PendingFriendRequest[]>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching pending friend requests:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load pending requests';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Accepts a pending friend request.
+ */
+export async function acceptFriendRequest(requestId: number, token: string): Promise<FriendActionResponse> {
+    const url = `${API_BASE_URL}/friends/requests/${requestId}/accept`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        // PATCH request typically doesn't need a body for this action
+        const response = await axios.patch<FriendActionResponse>(url, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error accepting friend request ${requestId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to accept friend request';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Rejects (deletes) a pending friend request.
+ */
+export async function rejectFriendRequest(requestId: number, token: string): Promise<FriendActionResponse> {
+    const url = `${API_BASE_URL}/friends/requests/${requestId}/reject`; // Assuming PATCH for reject
+    // If using DELETE method instead: const response = await axios.delete...
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+         // PATCH request typically doesn't need a body for this action
+        const response = await axios.patch<FriendActionResponse>(url, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error rejecting friend request ${requestId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to reject friend request';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Gets the list of accepted friends for the logged-in user.
+ */
+export async function getMyFriends(token: string): Promise<FriendUser[]> {
+    const url = `${API_BASE_URL}/friends`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.get<FriendUser[]>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching friends list:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load friends list';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Removes a friend (unfriend).
+ */
+export async function removeFriend(friendUserId: number, token: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/friends/${friendUserId}`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.delete<{ message: string }>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error removing friend ${friendUserId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to remove friend';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Searches for users by name or email (excluding self/friends/pending).
+ */
+export async function searchUsers(query: string, token: string): Promise<FriendUser[]> {
+    // Assumes API_BASE_URL includes /api
+    // Encode the query parameter to handle special characters
+    const encodedQuery = encodeURIComponent(query);
+    const url = `${API_BASE_URL}/users/search?query=${encodedQuery}`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.get<FriendUser[]>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error searching users for query "${query}":`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to search users';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Creates a new league. Requires PLAYER role.
+ */
+export async function createLeague(name: string, description: string | null, token: string): Promise<CreateLeagueResponse> {
+    const url = `${API_BASE_URL}/leagues`; // POST /api/leagues
+    const body = { name, description };
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.post<CreateLeagueResponse>(url, body, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error creating league "${name}":`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to create league';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Gets the list of leagues the currently logged-in user is a member of.
+ */
+export async function getMyLeagues(token: string): Promise<MyLeagueInfo[]> {
+    const url = `${API_BASE_URL}/leagues/my-leagues`; // GET /api/leagues/my-leagues
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.get<MyLeagueInfo[]>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error("API Error fetching user's leagues:", error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load your leagues';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Gets details for a specific league (user must be a member).
+ */
+export async function getLeagueDetails(leagueId: number, token: string): Promise<LeagueDetailsResponse> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}`; // GET /api/leagues/:leagueId
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.get<LeagueDetailsResponse>(url, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error fetching details for league ${leagueId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load league details';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Joins a league using an invite code. Requires PLAYER role.
+ */
+export async function joinLeagueByInviteCode(inviteCode: string, token: string): Promise<JoinLeagueResponse> {
+    const url = `${API_BASE_URL}/leagues/join/${inviteCode}`; // POST /api/leagues/join/:inviteCode
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        // POST request often doesn't need a body for this action
+        const response = await axios.post<JoinLeagueResponse>(url, {}, config);
+        return response.data;
+    } catch (error) {
+        console.error(`API Error joining league with code ${inviteCode}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to join league';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Fetches the standings specifically for a given league ID.
+ * Assumes backend returns camelCase.
+ */
+export async function getLeagueStandings(leagueId: number, token: string): Promise<StandingEntry[]> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}/standings`; // The new league-specific endpoint
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        const response = await axios.get<StandingEntry[]>(url, config);
+        // Assuming backend returns the correct StandingEntry[] structure directly (camelCase)
+        return response.data || []; // Return data or empty array
+    } catch (error) {
+        console.error(`API Error fetching standings for league ${leagueId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Could not load league standings';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Removes a member from a league (League Admin only).
+ */
+export async function removeLeagueMember(leagueId: number, memberUserIdToRemove: number, token: string): Promise<{ message: string }> {
+    // DELETE /api/leagues/:leagueId/members/:memberUserId
+    const url = `${API_BASE_URL}/leagues/${leagueId}/members/${memberUserIdToRemove}`;
+    const config = {
+        headers: { Authorization: `Bearer ${token}` },
+    };
+    try {
+        const response = await axios.delete<{ message: string }>(url, config);
+        return response.data; // Should contain success message
+    } catch (error) {
+        console.error(`API Error removing member ${memberUserIdToRemove} from league ${leagueId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to remove member';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Requests the backend to regenerate the invite code for a league (League Admin only).
+ */
+export async function regenerateInviteCodeAdmin(leagueId: number, token: string): Promise<RegenerateCodeResponse> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}/invite-code`; // PATCH endpoint
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    try {
+        // PATCH request, often doesn't need a body for this action
+        const response = await axios.patch<RegenerateCodeResponse>(url, {}, config);
+        return response.data; // Expect { message, inviteCode }
+    } catch (error) {
+        console.error(`API Error regenerating invite code for league ${leagueId}:`, error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to regenerate invite code';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+// --- End League API Functions ---
+
+// Optional: Add function to get sent pending requests if needed
+// export async function getSentRequests(token: string): Promise<SentFriendRequest[]> { ... }
+
+// Optional: Add function to search users if needed
+// export async function searchUsers(query: string, token: string): Promise<FriendUser[]> { ... }
+
+
+// --- End Friend API Functions ---
+
 
 // ============================
 // ==========================================================

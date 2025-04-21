@@ -19,7 +19,7 @@ const SelectTrigger = React.forwardRef<
     ref={ref}
     // Example styling - adjust to match Input component's look
     className={clsx(
-      'flex h-10 w-full items-center justify-between border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-0 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50',
+      'flex h-10 w-full items-center justify-between border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-0 focus:ring-ring focus:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 rounded-sm',
       // Example concrete: 'flex h-10 w-full items-center justify-between rounded-md border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 px-3 py-2 text-sm ...',
       className
     )}
@@ -43,7 +43,7 @@ const SelectContent = React.forwardRef<
       ref={ref}
       // Match table body styling: Dark background, subtle border, minimal rounding
       className={clsx(
-        'relative z-50 min-w-[var(--radix-select-trigger-width)] overflow-hidden', // Use same rounding as trigger/inputs
+        'relative z-50 min-w-[var(--radix-select-trigger-width)] overflow-hidden rounded-sm', // Use same rounding as trigger/inputs
         'border border-gray-700 dark:border-gray-700', // Same subtle border as trigger/table
         'bg-gray-800 dark:bg-gray-800', // Same dark background as table body/containers
         'text-gray-100 dark:text-gray-100', // Default text color
