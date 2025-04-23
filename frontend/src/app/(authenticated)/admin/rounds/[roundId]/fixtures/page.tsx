@@ -20,6 +20,8 @@ import {
     PotentialFixture,
     AddFixturePayload,
     ResultPayload,
+    fetchRoundResultsAdmin,
+    ApiError,
     //ImportFixturesPayload
 } from '@/lib/api';
 import ConfirmationModal from '@/components/Modal/ConfirmationModal'; // Keep using this for now
@@ -32,7 +34,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/Table";
-import { FaEdit, FaTrashAlt, FaFileUpload, FaPlus, FaExternalLinkAlt } from 'react-icons/fa';
+import { FaEdit, FaTrashAlt, FaFileUpload, FaPlus, FaExternalLinkAlt, FaSyncAlt } from 'react-icons/fa';
 import Spinner from '@/components/ui/Spinner';
 
 // --- ResultModal using UI components ---
@@ -185,6 +187,8 @@ export default function AdminRoundFixturesPage() {
     const [fetchError, setFetchError] = useState<string | null>(null); // For date range fetch
     const [selectedExternalIds, setSelectedExternalIds] = useState<Set<number>>(new Set());
     const [isImportingSelected, setIsImportingSelected] = useState(false); // For date range import
+    // --- ADD State for Fetching Results ---
+    const [isFetchingResults, setIsFetchingResults] = useState(false);
 
     // --- Fetch Fixtures Function (Identical to original) ---
     const fetchRoundAndFixtures = useCallback(async (id: number) => {
@@ -346,7 +350,7 @@ export default function AdminRoundFixturesPage() {
         setIsImportingSelected(true); setError(null); setFetchError(null);
         const fixturesToSubmit = potentialFixtures
             .filter(fixture => selectedExternalIds.has(fixture.externalId))
-            .map(({ homeTeam, awayTeam, matchTime }) => ({ homeTeam, awayTeam, matchTime }));
+            .map(({ externalId, homeTeam, awayTeam, matchTime }) => ({ externalId, homeTeam, awayTeam, matchTime }));
         try {
             const result = await importSelectedFixtures(token, roundId, fixturesToSubmit);
             const successMsg = result.message || `Imported ${result.count} fixtures successfully.`;
@@ -366,6 +370,35 @@ export default function AdminRoundFixturesPage() {
     };
     const handleSelectAllPotentialFixtures = (checked: boolean) => {
         setSelectedExternalIds(checked ? new Set(potentialFixtures.map(f => f.externalId)) : new Set());
+    };
+
+    const handleFetchResults = async () => {
+        if (user?.role !== 'ADMIN' || !token || isNaN(roundId)) {
+            toast.error("Admin authentication required or invalid round.");
+            return;
+        }
+        // Update check to include isFetchingResults
+        if (isAddingFixture || isDeletingFixture || isGeneratingResults || isFetchingExternal || isImportingSelected || isFetchingResults) {
+             toast.error("Another action is already in progress.");
+             return;
+        }
+
+        setIsFetchingResults(true);
+        setError(null); // Clear previous page errors
+        const toastId = toast.loading("Fetching latest results...");
+
+        try {
+            const result = await fetchRoundResultsAdmin(roundId, token); // Call the API function
+            toast.success(result.message || `Fetched results: ${result.updatedCount} fixtures updated.`, { id: toastId });
+            await fetchRoundAndFixtures(roundId); // Refresh the fixture list on the page
+        } catch (err: unknown) {
+            console.error(`Error fetching results for round ${roundId}:`, err);
+            const message = err instanceof ApiError ? err.message : 'Failed to fetch results.';
+            toast.error(`Fetch failed: ${message}`, { id: toastId });
+            setError(message); // Optionally display error on page too
+        } finally {
+            setIsFetchingResults(false);
+        }
     };
     // --- END Handlers ---
 
@@ -449,7 +482,21 @@ export default function AdminRoundFixturesPage() {
                          <h2 className="text-xl font-semibold text-gray-200">Existing Fixtures ({fixtures.length})</h2>
                          <p className="text-sm text-gray-400 mt-1">Manage results for fixtures currently in Round {roundId}.</p>
                      </div>
-                     <div> {/* Wrapper for the button */}
+                     <div className="flex items-center gap-2"> {/* Wrapper for the button */}
+
+                            {/* --- ADD Fetch Results Button --- */}
+                          <Button
+                          onClick={handleFetchResults}
+                          variant="outline" // Or another variant
+                          size="sm"
+                          disabled={isAnyActionRunning || isLoading || isFetchingResults} // Disable during any action
+                          isLoading={isFetchingResults}
+                          title="Fetch Latest Results from External API"
+                      >
+                          <FaSyncAlt className={`mr-2 h-4 w-4 ${isFetchingResults ? 'animate-spin' : ''}`} /> {/* Add icon with optional spin */}
+                          Fetch Results
+                      </Button>
+                      {/* --- END Fetch Results Button --- */}
                           {/* Generate Random Button */}
                           <Button
                               onClick={openGenerateRandomModal}

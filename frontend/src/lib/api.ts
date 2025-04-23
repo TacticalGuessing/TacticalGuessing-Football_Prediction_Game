@@ -397,6 +397,12 @@ export interface DashboardHighlightsResponse {
     } | null;
 }
 
+// Type for the response from the fetch results endpoint
+interface FetchResultsResponse {
+    message: string;
+    updatedCount: number;
+}
+
 // --- Add User Prediction Stats Types ---
 interface BestRoundInfo {
     roundId: number;
@@ -2194,6 +2200,40 @@ export async function deleteLeagueAdmin(leagueId: number, token: string): Promis
             ? error.response.data.message
             : 'Failed to delete league';
         const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Triggers the backend to fetch latest results for unfinished fixtures in a specific round.
+ * (Admin only)
+ * @param roundId The ID of the round to fetch results for.
+ * @param token Admin user's authentication token.
+ * @returns Promise resolving to an object with message and updatedCount.
+ * @throws ApiError
+ */
+export async function fetchRoundResultsAdmin(roundId: number, token: string): Promise<FetchResultsResponse> {
+    // POST /api/admin/rounds/:roundId/fetch-results (or /api/rounds/... if route is there)
+    // <<< Double check the actual route path you added in rounds.js or admin.js >>>
+    const url = `${API_BASE_URL}/rounds/${roundId}/fetch-results`; // Adjust if route is under /admin
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling fetchRoundResultsAdmin: POST ${url}`, 'color: blueviolet;');
+
+    try {
+        // POST request, typically no body needed for this trigger action
+        const response = await axios.post<FetchResultsResponse>(url, {}, config); // Send empty object as body
+        console.log(`%c[fetchRoundResultsAdmin] Success response status: ${response.status}`, 'color: blueviolet;');
+        return response.data; // Expect { message, updatedCount }
+    } catch (error) {
+        console.error(`%c[fetchRoundResultsAdmin] Error fetching results for round ${roundId}:`, 'color: red; font-weight: bold;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to trigger result fetching';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        // Handle specific errors like 429 Rate Limit from backend if needed
+        if (statusCode === 429) {
+             throw new ApiError('External API rate limit hit. Please try again later.', statusCode);
+        }
         throw new ApiError(message, statusCode);
     }
 }

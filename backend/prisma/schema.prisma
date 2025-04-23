@@ -50,6 +50,7 @@ model Round {
 model Fixture {
   fixtureId      Int       @id @default(autoincrement()) @map("fixture_id")
   roundId        Int       @map("round_id")
+  externalId     Int?      @map("external_id")
   homeTeam       String    @map("home_team")
   awayTeam       String    @map("away_team")
   matchTime      DateTime  @map("match_time")
@@ -63,7 +64,8 @@ model Fixture {
 
   // Unique constraint added previously
   @@unique([roundId, homeTeam, awayTeam, matchTime], map: "fixtures_round_teams_time_key")
-
+  // Optional: Add unique constraint for externalId within a round later if needed
+  // @@unique([roundId, externalId])
   @@map("fixtures")
 }
 

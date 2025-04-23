@@ -7,6 +7,7 @@ const scoringUtils = require('../src/utils/scoringUtils');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const { fetchRoundResults } = require('../src/controllers/adminRoundController');
 
 console.log('[rounds.js] Type of imported scoringUtils:', typeof scoringUtils); // Should log 'object'
 console.log('[rounds.js] Type of scoringUtils.calculatePoints:', typeof scoringUtils.calculatePoints); // Should log 'function
@@ -33,6 +34,9 @@ try {
 // ======================================================
 
 // --- Round Management (Admin Only) ---
+
+// POST /api/rounds/:roundId/fetch-results
+router.post('/:roundId/fetch-results', protect, admin, fetchRoundResults);
 
 // POST /api/rounds - Create a new round
 router.post('/', protect, admin, async (req, res, next) => {
@@ -1367,29 +1371,30 @@ router.post('/:roundId/import-selected', protect, admin, async (req, res, next) 
         await client.query('BEGIN');
 
         // 3. Insert Fixtures (handle potential duplicates)
+        // --- MODIFY Insert Query ---
         const insertQuery = `
-            INSERT INTO fixtures (round_id, home_team, away_team, match_time, status)
-            VALUES ($1, $2, $3, $4, 'SCHEDULED')
-            ON CONFLICT (round_id, home_team, away_team, match_time) -- Example constraint, adjust if yours is different!
-            DO NOTHING; -- Or DO UPDATE if you want to overwrite based on the constraint
+            INSERT INTO fixtures (round_id, external_id, home_team, away_team, match_time, status)
+            VALUES ($1, $2, $3, $4, $5, 'SCHEDULED')
+            ON CONFLICT (round_id, home_team, away_team, match_time) -- Using fallback constraint
+            -- Alternative (better if you add unique constraint on externalId):
+            -- ON CONFLICT (external_id) -- Or ON CONFLICT (round_id, external_id)
+            DO NOTHING;
         `;
-        // Note: The ON CONFLICT requires a unique constraint in your DB on these columns.
-        // If you don't have one, you'd need to SELECT first to check for existence, which is less efficient.
-        // A constraint like (round_id, external_id) would be better if you stored external_id.
-        // Using (round_id, home_team, away_team, match_time) is a fallback but less robust if team names change slightly.
 
         let successfullyImportedCount = 0;
         for (const fixture of fixturesToImport) {
             const result = await client.query(insertQuery, [
                 parsedRoundId,
+                fixture.externalId, // <<< ADD externalId here
                 fixture.homeTeam,
                 fixture.awayTeam,
-                fixture.matchTime // Already validated as valid ISO string
+                fixture.matchTime
             ]);
-            if (result.rowCount > 0) { // Check if a row was actually inserted (not skipped by ON CONFLICT)
+            if (result.rowCount > 0) {
                 successfullyImportedCount++;
             }
         }
+        // --- END Insert Modification ---
 
         // 4. Commit Transaction
         await client.query('COMMIT');
