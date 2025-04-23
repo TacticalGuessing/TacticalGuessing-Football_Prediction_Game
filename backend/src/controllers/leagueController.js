@@ -3,7 +3,7 @@ const prisma = require('../db.ts').default; // Adjust path
 const { Prisma } = require('@prisma/client');
 const crypto = require('crypto'); // For invite code generation
 const { calculateStandings } = require('../utils/scoringUtils');
-
+const asyncHandler = require('express-async-handler');
 
 
 /**
@@ -73,7 +73,11 @@ const createLeague = async (req, res) => {
                 data: {
                     leagueId: league.leagueId,
                     userId: creatorUserId,
-                    role: 'ADMIN' // Creator is the league admin
+                    role: 'ADMIN', // Creator is the league admin
+                    // --- ADDED ---
+                    status: 'ACCEPTED',
+                    joinedAt: new Date(),
+                    // --- END ADDED ---
                 }
             });
 
@@ -108,7 +112,12 @@ const getMyLeagues = async (req, res) => {
 
     try {
         const memberships = await prisma.leagueMembership.findMany({
-            where: { userId: userId },
+            where: {
+                userId: userId,
+                // --- ADD STATUS FILTER ---
+                status: 'ACCEPTED' // Only return leagues the user has actively joined
+                // --- END STATUS FILTER ---
+            },
             select: {
                 role: true, // User's role in the league
                 league: { // Include league details
@@ -204,8 +213,12 @@ const joinLeagueByInviteCode = async (req, res) => {
         const newMembership = await prisma.leagueMembership.create({
             data: {
                 leagueId: league.leagueId,
-                userId: userId,
-                role: 'MEMBER' // New joiners are members
+                userId: req.user.userId, // Use req.user.userId directly
+                role: 'MEMBER', // New joiners are members
+                // --- ADDED ---
+                status: 'ACCEPTED',
+                joinedAt: new Date(),
+                // --- END ADDED ---
             },
             select: { // Select relevant data to return
                 membershipId: true,
@@ -503,8 +516,253 @@ const regenerateInviteCode = async (req, res) => {
     }
 };
 
+// --- ADD NEW FUNCTION: inviteFriendsToLeague ---
+/**
+ * @desc    Invite friends to a league
+ * @route   POST /api/leagues/:leagueId/invites
+ * @access  Private (Requires League Admin role for that league)
+ */
+// Wrap with asyncHandler for consistent error handling like new controllers
+const inviteFriendsToLeague = asyncHandler(async (req, res) => {
+    const leagueId = parseInt(req.params.leagueId);
+    // Expecting { userIds: [1, 2, 3] } in request body
+    const { userIds } = req.body;
+    const adminUserId = req.user.userId; // User making the request
 
-// --- Update Exports ---
+    // Validate leagueId
+    if (isNaN(leagueId)) {
+        res.status(400); throw new Error('Invalid League ID.');
+    }
+    // Validate userIds input
+    if (!Array.isArray(userIds) || userIds.length === 0) {
+        res.status(400); throw new Error('User IDs must be provided as a non-empty array.');
+    }
+    // Ensure user IDs are numbers
+    const targetUserIds = userIds.map(id => parseInt(id)).filter(id => !isNaN(id));
+    if (targetUserIds.length === 0) {
+        res.status(400); throw new Error('Valid User IDs must be provided.');
+    }
+
+    // --- Start transaction for safety ---
+    try {
+        const result = await prisma.$transaction(async (tx) => {
+            // 1. Fetch league details & verify admin status in one go
+            const league = await tx.league.findUnique({
+                where: { leagueId: leagueId },
+                select: {
+                    leagueId: true,
+                    name: true,
+                    memberships: { // Fetch memberships to check admin role and existing members/invitees
+                        select: {
+                            userId: true,
+                            role: true,
+                            status: true, // Need status to filter ACCEPTED/INVITED
+                        }
+                    }
+                }
+            });
+
+            if (!league) {
+                res.status(404); throw new Error('League not found.'); // Will be caught by outer try/catch
+            }
+
+            // Check if requester is ADMIN
+            const isAdmin = league.memberships.some(m => m.userId === adminUserId && m.role === 'ADMIN');
+            if (!isAdmin) {
+                res.status(403); throw new Error('Only the league admin can invite members.');
+            }
+
+            // Get IDs of users already associated (member or invited)
+            const existingMemberOrInviteeUserIds = new Set(
+                league.memberships.map(m => m.userId)
+            );
+
+            // 2. Verify invitees are friends of the admin (Using your Friendship model structure)
+            const friendships = await tx.friendship.findMany({
+                where: {
+                    status: 'ACCEPTED',
+                    OR: [
+                        { requesterId: adminUserId, addresseeId: { in: targetUserIds } },
+                        { addresseeId: adminUserId, requesterId: { in: targetUserIds } },
+                    ]
+                },
+                select: { requesterId: true, addresseeId: true } // Select the IDs to find the friend
+            });
+
+            const friendUserIds = new Set(
+                friendships.map(f => f.requesterId === adminUserId ? f.addresseeId : f.requesterId)
+            );
+
+            // 3. Filter the input targetUserIds:
+            const validUserIdsToInvite = targetUserIds.filter(id =>
+                id !== adminUserId &&                   // Not the admin themselves
+                !existingMemberOrInviteeUserIds.has(id) && // Not already in league (member or invited)
+                friendUserIds.has(id)                   // Must be an accepted friend
+            );
+
+            if (validUserIdsToInvite.length === 0) {
+                // Don't throw an error, just report 0 invites sent
+                return { count: 0, leagueName: league.name }; // Return 0 count
+            }
+
+            // 4. Prepare data for bulk insertion
+            const dataToInsert = validUserIdsToInvite.map(userId => ({
+                leagueId: leagueId,
+                userId: userId,
+                role: 'MEMBER', // Invitees join as MEMBER if they accept
+                status: 'INVITED',
+                invitedAt: new Date(),
+                // joinedAt remains null
+            }));
+
+            console.log('[inviteFriendsToLeague] Filtered User IDs to Invite:', validUserIdsToInvite);
+            console.log('[inviteFriendsToLeague] Data being sent to createMany:', dataToInsert);
+
+            // 5. Insert the invitations
+            const creationResult = await tx.leagueMembership.createMany({
+                data: dataToInsert,
+                skipDuplicates: true, // Safety net
+            });
+
+            // --- DEBUG: Check status immediately after creation ---
+    if (creationResult.count > 0 && validUserIdsToInvite.length > 0) {
+        const createdMembership = await tx.leagueMembership.findUnique({
+            where: {
+                leagueId_userId: { // Use your unique constraint name
+                    leagueId: leagueId,
+                    userId: validUserIdsToInvite[0] // Check the first invited user
+                }
+            },
+            select: { status: true, joinedAt: true } // Select the fields of interest
+        });
+        console.log(`[DEBUG] Status of created membership for user ${validUserIdsToInvite[0]}:`, createdMembership);
+    }
+    // --- END DEBUG ---
+
+            // Return count and league name for the response message
+            return { count: creationResult.count, leagueName: league.name };
+        }); // --- End transaction ---
+
+        // Construct response message based on transaction result
+        if (result.count > 0) {
+            console.log(`League Admin ${adminUserId} invited ${result.count} users to league ${leagueId}`);
+            res.status(201).json({
+                message: `Successfully sent ${result.count} invitation(s) for league "${result.leagueName}".`,
+                count: result.count,
+            });
+        } else {
+            // If 0 invites were sent (e.g., all filtered out)
+             res.status(200).json({ // Use 200 OK instead of 400 error
+                message: 'No valid users to invite. They might already be members, not friends, or you tried to invite yourself.',
+                count: 0,
+            });
+        }
+
+    } catch (error) {
+         // Handle errors thrown from within transaction (like 403/404) or Prisma errors
+         console.error(`Error inviting friends to league ${leagueId}:`, error);
+         // Re-throw if it's a specific error we want the middleware to catch
+         if (error instanceof Error && (res.statusCode === 403 || res.statusCode === 404)) {
+             throw error;
+         }
+         // Otherwise send a generic server error
+         res.status(500);
+         throw new Error('Failed to process league invitations.');
+    }
+});
+
+/**
+ * @desc    Allow a member to leave a league
+ * @route   DELETE /api/leagues/:leagueId/membership
+ * @access  Private (League Member)
+ */
+const leaveLeague = asyncHandler(async (req, res) => {
+    const leagueId = parseInt(req.params.leagueId);
+    const userId = req.user.userId; // User requesting to leave
+
+    if (isNaN(leagueId)) {
+        res.status(400); throw new Error('Invalid League ID.');
+    }
+
+    // Find the membership to ensure the user is actually a member and NOT the creator/admin
+    const membership = await prisma.leagueMembership.findUnique({
+        where: {
+            leagueId_userId: { // Use your unique constraint name
+                leagueId: leagueId,
+                userId: userId
+            }
+        },
+        select: {
+            membershipId: true,
+            role: true,
+            league: { // Need league creatorId to prevent creator from leaving
+                 select: { creatorUserId: true, name: true }
+            }
+        }
+    });
+
+    if (!membership) {
+        res.status(404); throw new Error('You are not currently a member of this league.');
+    }
+
+    // Prevent the League Admin/Creator from leaving via this route
+    // They would need to delete the league or transfer ownership (future feature)
+    if (membership.role === 'ADMIN' || userId === membership.league.creatorUserId) {
+        res.status(403); throw new Error('League admins/creators cannot leave the league this way.');
+    }
+
+    // Delete the membership record
+    await prisma.leagueMembership.delete({
+        where: {
+            membershipId: membership.membershipId
+        }
+    });
+
+    console.log(`User ${userId} left league ${leagueId} (${membership.league.name})`);
+    res.status(200).json({ message: `Successfully left league: ${membership.league.name}` }); // Or 204 No Content
+});
+
+/**
+ * @desc    Delete a league
+ * @route   DELETE /api/leagues/:leagueId
+ * @access  Private (League Admin/Creator Only)
+ */
+const deleteLeague = asyncHandler(async (req, res) => {
+    const leagueId = parseInt(req.params.leagueId);
+    const userId = req.user.userId; // User making the request
+
+    if (isNaN(leagueId)) {
+        res.status(400); throw new Error('Invalid League ID.');
+    }
+
+    // Find the league AND check if the requesting user is the creator (the only one allowed to delete)
+    const league = await prisma.league.findUnique({
+        where: { leagueId: leagueId },
+        select: { creatorUserId: true, name: true } // Select necessary fields
+    });
+
+    if (!league) {
+        res.status(404); throw new Error('League not found.');
+    }
+
+    // --- Authorization Check: Only the creator can delete ---
+    // You could also check the LeagueMembership role === 'ADMIN', but creator is stricter
+    if (league.creatorUserId !== userId) {
+        res.status(403); throw new Error('Only the league creator can delete the league.');
+    }
+    // --- End Authorization Check ---
+
+    // Prisma will cascade delete related LeagueMemberships due to `onDelete: Cascade` in the schema relation
+    await prisma.league.delete({
+        where: { leagueId: leagueId },
+    });
+
+    console.log(`User ${userId} deleted league ${leagueId} (${league.name})`);
+    res.status(200).json({ message: `League "${league.name}" deleted successfully.` }); // Or 204 No Content
+});
+
+
+// --- Update module.exports ---
 module.exports = {
     createLeague,
     getMyLeagues,
@@ -512,5 +770,8 @@ module.exports = {
     getLeagueDetails,
     getLeagueStandings,
     removeLeagueMember,
-    regenerateInviteCode, // <-- Add new function
+    regenerateInviteCode,
+    inviteFriendsToLeague,
+    leaveLeague, // <<< ADD leaveLeague
+    deleteLeague
 };

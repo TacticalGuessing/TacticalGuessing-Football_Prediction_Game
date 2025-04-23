@@ -440,7 +440,7 @@ export interface LeagueDetailsResponse {
     inviteCode?: string | null; // Only present for league admins
     createdAt: string; // ISO Date string
     creator: LeagueCreatorInfo;
-    memberships: LeagueMemberInfo[];
+    memberships: LeagueMembership[];
 }
 
 // Type for the response when getting the list of leagues the user is in
@@ -468,6 +468,53 @@ export interface JoinLeagueResponse {
     }
 }
 
+// Interface for basic League info
+export interface LeagueBaseInfo {
+    leagueId: number;
+    name: string;
+    description?: string | null;
+    creator?: FriendUser; // Use your FriendUser type
+}
+
+// Update/Define LeagueMembership to match backend + add status/invite fields
+export interface LeagueMembership {
+    membershipId: number;
+    leagueId: number;
+    userId: number;
+    role: 'ADMIN' | 'MEMBER';
+    status: 'ACCEPTED' | 'INVITED'; // <<< ADDED status
+    joinedAt?: string | null;      // <<< Ensure optional (ISO Date string)
+    invitedAt?: string | null;     // <<< ADDED invitedAt (ISO Date string)
+    user?: FriendUser;             // User details (if included)
+    league?: LeagueBaseInfo;       // League details (if included)
+}
+
+// Type specifically for Pending Invites list items (ensures nested league is present)
+export interface PendingLeagueInvite extends LeagueMembership {
+    status: 'INVITED'; // Explicitly INVITED
+    league: LeagueBaseInfo & { // Ensure league details are present
+        creator: FriendUser; // Ensure creator info is included
+    };
+}
+
+// Payload for inviting friends
+export interface InviteFriendsPayload {
+    userIds: number[];
+}
+
+// Response after inviting friends
+export interface InviteFriendsResponse {
+    message: string;
+    count: number;
+}
+
+// Response after accepting an invite
+export interface AcceptInviteResponse {
+    message: string;
+    membership: LeagueMembership; // The updated membership record
+}
+// --- End League Membership & Invite Types ---
+
 // Type for response after creating a league
 // Backend currently returns: { leagueId, name, description, inviteCode, createdAt }
 // Let's create a matching type
@@ -484,6 +531,8 @@ interface RegenerateCodeResponse {
     message: string;
     inviteCode: string; // The NEW invite code
 }
+
+
 
 // --- End Custom API Error Class ---
 
@@ -2019,6 +2068,127 @@ export async function regenerateInviteCodeAdmin(leagueId: number, token: string)
         throw new ApiError(message, statusCode);
     }
 }
+
+// --- NEW League Invite API Functions ---
+
+/** Invite friends to a league */
+export async function inviteFriendsToLeague(leagueId: number, userIds: number[], token: string): Promise<InviteFriendsResponse> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}/invites`;
+    const payload: InviteFriendsPayload = { userIds };
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling inviteFriendsToLeague: POST ${url}`, 'color: green;', payload);
+    try {
+        const response = await axios.post<InviteFriendsResponse>(url, payload, config);
+        console.log(`%c[inviteFriendsToLeague] Success response:`, 'color: green;', response.data);
+        return response.data;
+    } catch (error) {
+        console.error(`%c[inviteFriendsToLeague] Error inviting to league ${leagueId}:`, 'color: red;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message ? error.response.data.message : 'Failed to send league invitations';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/** Get pending league invitations for the current user */
+export async function getPendingLeagueInvites(token: string): Promise<PendingLeagueInvite[]> {
+    const url = `${API_BASE_URL}/leagues/invites/pending`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling getPendingLeagueInvites: GET ${url}`, 'color: blue;');
+    try {
+        const response = await axios.get<PendingLeagueInvite[]>(url, config);
+        console.log(`%c[getPendingLeagueInvites] Success response (count: ${response.data?.length})`, 'color: blue;');
+        return response.data || [];
+    } catch (error) {
+        console.error(`%c[getPendingLeagueInvites] Error fetching pending invites:`, 'color: red;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message ? error.response.data.message : 'Could not load pending league invitations';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/** Accept a specific pending league invitation */
+export async function acceptLeagueInvite(membershipId: number, token: string): Promise<AcceptInviteResponse> {
+    const url = `${API_BASE_URL}/leagues/invites/${membershipId}/accept`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling acceptLeagueInvite: PATCH ${url}`, 'color: darkgreen;');
+    try {
+        const response = await axios.patch<AcceptInviteResponse>(url, {}, config); // Empty body for PATCH
+        console.log(`%c[acceptLeagueInvite] Success response:`, 'color: darkgreen;', response.data);
+        return response.data;
+    } catch (error) {
+        console.error(`%c[acceptLeagueInvite] Error accepting invite ${membershipId}:`, 'color: red;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message ? error.response.data.message : 'Failed to accept league invitation';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/** Reject (delete) a specific pending league invitation */
+export async function rejectLeagueInvite(membershipId: number, token: string): Promise<void> {
+    const url = `${API_BASE_URL}/leagues/invites/${membershipId}/reject`;
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling rejectLeagueInvite: DELETE ${url}`, 'color: darkred;');
+    try {
+        const response = await axios.delete(url, config);
+        if (response.status !== 204) {
+             console.warn(`%c[rejectLeagueInvite] Expected status 204 but got ${response.status}`, 'color: orange;');
+        }
+        console.log(`%c[rejectLeagueInvite] Success (status ${response.status})`, 'color: darkred;');
+    } catch (error) {
+        console.error(`%c[rejectLeagueInvite] Error rejecting invite ${membershipId}:`, 'color: red;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message ? error.response.data.message : 'Failed to reject league invitation';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Allows the currently logged-in user to leave a league they are a member of.
+ */
+export async function leaveLeague(leagueId: number, token: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}/membership`; // DELETE endpoint
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling leaveLeague: DELETE ${url}`, 'color: orange;');
+
+    try {
+        // DELETE requests might return 200 with message or 204 No Content
+        const response = await axios.delete<{ message: string }>(url, config);
+        console.log(`%c[leaveLeague] Success response status: ${response.status}`, 'color: orange;');
+        // Return backend message if present, otherwise a default success message
+        return response.data || { message: 'Successfully left league.' };
+    } catch (error) {
+        console.error(`%c[leaveLeague] Error leaving league ${leagueId}:`, 'color: red;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to leave league';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+
+/**
+ * Deletes a league (League Admin/Creator only).
+ */
+export async function deleteLeagueAdmin(leagueId: number, token: string): Promise<{ message: string }> {
+    const url = `${API_BASE_URL}/leagues/${leagueId}`; // DELETE /api/leagues/:leagueId
+    const config = { headers: { Authorization: `Bearer ${token}` } };
+    console.log(`%c[api.ts] Calling deleteLeagueAdmin: DELETE ${url}`, 'color: red;');
+
+    try {
+        // DELETE requests might return 200 with message or 204 No Content
+        const response = await axios.delete<{ message: string }>(url, config);
+        console.log(`%c[deleteLeagueAdmin] Success response status: ${response.status}`, 'color: red;');
+        return response.data || { message: 'League deleted successfully.' };
+    } catch (error) {
+        console.error(`%c[deleteLeagueAdmin] Error deleting league ${leagueId}:`, 'color: red; font-weight: bold;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to delete league';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
+// --- End NEW League Invite API Functions ---
 // --- End League API Functions ---
 
 // Optional: Add function to get sent pending requests if needed

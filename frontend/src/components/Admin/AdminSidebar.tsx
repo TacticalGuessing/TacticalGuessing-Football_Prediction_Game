@@ -3,7 +3,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FaTools, FaUsers, FaListOl, FaSearch, FaPlus, FaNewspaper } from 'react-icons/fa'; // Ensure FaPlus is imported
+import { FaTools, FaUsers, FaListOl, FaSearch, FaPlus, FaNewspaper, FaPalette } from 'react-icons/fa'; // Ensure FaPlus is imported
 import React from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui/Button'; // Ensure Button is imported
@@ -29,6 +29,7 @@ const adminLinks: NavLink[] = [
   { href: '/admin/prediction-status', label: 'Prediction Status', icon: < IoFileTrayStackedOutline /> },
   { href: '/admin/audit', label: 'Prediction Audit', icon: <FaSearch /> },
   { href: '/admin/dev', label: 'Dev Tools', icon: <FaTools /> },
+  { href: '/admin/ui-sandbox', label: 'UI Sandbox', icon: < FaPalette /> },
 ];
 
 // Make the component accept the props

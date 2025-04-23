@@ -28,6 +28,7 @@ const userPredictionsRoutes = require('./routes/userPredictionsRoutes');
 const friendsRoutes = require('./routes/friendsRoutes');
 const userRoutes = require('./routes/userRoutes'); // Or './routes/userRoutes'
 const leagueRoutes = require('./routes/leagueRoutes'); // Or './routes/leagueRoutes'
+const leagueInviteRoutes = require('./routes/leagueInviteRoutes');
 
 const app = express();
 // Read port from environment AFTER dotenv has loaded
@@ -96,6 +97,7 @@ app.use('/api/users', userPredictionsRoutes);
 app.use('/api/friends', friendsRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leagues', leagueRoutes);
+app.use('/api/leagues/invites', leagueInviteRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

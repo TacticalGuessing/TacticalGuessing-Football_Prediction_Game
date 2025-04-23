@@ -5,22 +5,24 @@ import React from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useAuth } from '@/context/AuthContext';
-import { usePathname, useRouter } from 'next/navigation';
-import Avatar from './Avatar';
+import { usePathname} from 'next/navigation';
+import Avatar from './Avatar'; // Your Avatar component
 import { Button } from './ui/Button'; // Using Button from ui directory
 // Import icons needed now and for next steps
 import { FaHome, FaClipboardList, FaPoll, FaTrophy, FaUserCog, FaSignOutAlt } from 'react-icons/fa';
 import { clsx } from 'clsx'; // Import clsx for easier class management
 
 export default function Header() {
-    const { user, logout, isLoading } = useAuth();
+    // <<< Destructure the new notification flags from useAuth >>>
+    const { user, logout, isLoading, hasPendingFriendRequests, hasPendingLeagueInvites } = useAuth();
     const pathname = usePathname();
-    const router = useRouter();
+    //const router = useRouter();
+
+    
 
     const handleLogout = () => {
         logout();
-        router.push('/login');
-        // Redirect logic will be handled later
+        // Redirect is handled within logout function in AuthContext
     };
 
     // Updated isActive to handle base dashboard route specifically
@@ -40,6 +42,9 @@ export default function Header() {
     const linkInactiveClasses = "text-gray-300";
     const linkActiveClasses = "bg-gray-700 text-white font-medium";
     // Admin link styles removed as Button component handles variants
+
+    // <<< Combine notification flags >>>
+    const hasNotifications = hasPendingFriendRequests || hasPendingLeagueInvites;
 
     return (
         <header className="bg-gray-800 border-b border-gray-700 shadow-sm sticky top-0 z-50 h-16">
@@ -64,13 +69,10 @@ export default function Header() {
                     /* Logged-in User View */
                     : user ? (
                         <>
-                            {/* --- Navigation Links --- */}
-                             {/* Added Home Link with Icon */}
+                            {/* --- Navigation Links (Keep as is) --- */}
                              <Link href="/dashboard" className={`${linkBaseClasses} ${isActive('/dashboard') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
-                                <FaHome className="mr-1.5 h-4 w-4" /> {/* Added icon */}
-                                Home
+                                <FaHome className="mr-1.5 h-4 w-4" /> Home
                              </Link>
-
                             {user.role !== 'VISITOR' && (
                                 <Link href="/predictions" className={`${linkBaseClasses} ${isActive('/predictions') ? linkActiveClasses : linkInactiveClasses} hover:bg-gray-700 hover:text-white`}>
                                     <FaClipboardList className="mr-1.5 h-4 w-4" /> Predictions
@@ -88,7 +90,7 @@ export default function Header() {
                             {/* --- Admin/User/Logout Section --- */}
                             <div className="flex items-center space-x-2 pl-2 md:pl-3 border-l border-gray-600">
 
-                                {/* Admin Panel Icon Button */}
+                                {/* Admin Panel Icon Button (Keep as is) */}
                                 {user.role === 'ADMIN' && (
                                     <Link href="/admin" passHref legacyBehavior>
                                          <Button
@@ -96,10 +98,9 @@ export default function Header() {
                                             size="icon"
                                             title="Admin Panel"
                                             aria-label="Admin Panel"
-                                            // Using clsx for cleaner active state on button
                                             className={clsx(
                                                 'text-gray-300 hover:bg-gray-700 hover:text-white',
-                                                isActive('/admin') && 'bg-gray-700 text-white' // Active class
+                                                isActive('/admin') && 'bg-gray-700 text-white'
                                             )}
                                          >
                                              <FaUserCog className="h-5 w-5" />
@@ -107,18 +108,35 @@ export default function Header() {
                                     </Link>
                                 )}
 
-                                {/* Avatar Link to Profile */}
-                                <Link href={user.role !== 'VISITOR' ? "/profile" : "#"} className={user.role === 'VISITOR' ? 'pointer-events-none block' : 'block'} title="View Profile">
-                                     <Avatar fullAvatarUrl={user?.avatarUrl} name={user.name} size="sm" className="border-2 border-gray-600 hover:border-accent transition-colors"/>
+                                {/* --- Avatar Link to Profile with Notification Ring --- */}
+                                <Link
+                                    href={user.role !== 'VISITOR' ? "/profile" : "#"}
+                                    className={clsx(
+                                        "relative block rounded-full", // Add relative and rounded-full here
+                                        user.role === 'VISITOR' && 'pointer-events-none',
+                                        // Conditionally apply ring styles
+                                        hasNotifications && "ring-2 ring-red-500 ring-offset-2 ring-offset-gray-800" // Adjust ring/offset color
+                                    )}
+                                    title="View Profile"
+                                >
+                                     {/* Apply styles directly to Avatar or keep wrapper? Wrapper is often safer for ring offset */}
+                                     <Avatar
+                                        fullAvatarUrl={user?.avatarUrl}
+                                        name={user.name}
+                                        size="sm"
+                                        className="border-2 border-gray-600 hover:border-accent transition-colors" // Keep existing Avatar styles
+                                    />
                                 </Link>
+                                {/* --- End Avatar Link --- */}
 
-                                {/* Logout Icon Button */}
+
+                                {/* Logout Icon Button (Keep as is) */}
                                <Button
                                    variant="ghost"
                                    size="icon"
                                    onClick={handleLogout}
                                    disabled={isLoading}
-                                   className="text-gray-300 hover:bg-gray-700 hover:text-white" // Standard hover
+                                   className="text-gray-300 hover:bg-gray-700 hover:text-white"
                                    title="Logout" aria-label="Logout"
                                >
                                    <FaSignOutAlt className="h-5 w-5"/>
@@ -127,7 +145,7 @@ export default function Header() {
                             {/* --- End Admin/User/Logout Section --- */}
                         </>
                     )
-                    /* Logged-Out User View */
+                    /* Logged-Out User View (Keep as is) */
                     : (
                         <>
                             <Link href="/login" className={`${linkBaseClasses} ${isActive('/login') ? linkActiveClasses : linkInactiveClasses}`}> Login </Link>

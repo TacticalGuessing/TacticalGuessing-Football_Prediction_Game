@@ -12,28 +12,42 @@ import { useAuth } from '@/context/AuthContext';
 import {
     getMyLeagues,
     MyLeagueInfo, // Make sure this type includes leagueId, name, myLeagueRole, inviteCode?
-    ApiError
+    ApiError,
+    deleteLeagueAdmin
 } from '@/lib/api';
 
 // Import UI Components & Icons
 import { Button } from '@/components/ui/Button';
 import Spinner from '@/components/ui/Spinner';
 import CreateLeagueModal from '@/components/Leagues/CreateLeagueModal';
+import ConfirmationModal from '@/components/Modal/ConfirmationModal';
 import JoinLeagueModal from '@/components/Leagues/JoinLeagueModal';
 import {
-    FaUser, FaCog, FaListAlt, FaChartBar, FaUserFriends, FaPlus, FaSignInAlt, FaChevronDown, FaChevronRight, FaTrophy
+    FaUser, FaCog, FaListAlt, FaChartBar, FaUserFriends, FaPlus, FaSignInAlt, FaChevronDown, FaChevronRight, FaTrophy, FaTrashAlt
 } from 'react-icons/fa';
+
+import { toast } from 'react-hot-toast'; // <<< Import toast
+
+// --- ADD Notification Dot Component ---
+const NotificationDot = () => (
+    // Positioned relative to the parent Link (needs parent `relative` class)
+    <span className="absolute top-1 right-1 block h-2 w-2 rounded-full bg-red-500 ring-1 ring-red-500 z-10"></span> // Adjusted ring offset color
+);
+// --- END Notification Dot Component ---
 
 // Define NavLink interface
 interface ProfileNavLink {
     href: string;
     label: string;
     icon: IconType;
+    notify?: boolean; // <<< ADDED Optional notify flag
 }
 
 export default function ProfileSidebar() {
     const pathname = usePathname();
-    const { token } = useAuth();
+    const { token, hasPendingFriendRequests, hasPendingLeagueInvites } = useAuth();
+
+    console.log('[ProfileSidebar Render] Friend Status:', hasPendingFriendRequests, 'League Status:', hasPendingLeagueInvites);
 
     // State for leagues and modals
     const [myLeagues, setMyLeagues] = useState<MyLeagueInfo[]>([]);
@@ -42,6 +56,9 @@ export default function ProfileSidebar() {
     const [isCreateLeagueModalOpen, setIsCreateLeagueModalOpen] = useState(false);
     const [isJoinLeagueModalOpen, setIsJoinLeagueModalOpen] = useState(false);
     const [showLeagues, setShowLeagues] = useState(true);
+    const [leagueToDelete, setLeagueToDelete] = useState<MyLeagueInfo | null>(null);
+    const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+    const [isDeletingLeague, setIsDeletingLeague] = useState(false);
 
     // Fetch Leagues Function
     const fetchMyLeagues = useCallback(async () => {
@@ -72,12 +89,46 @@ export default function ProfileSidebar() {
         { href: '/profile', label: 'View Profile', icon: FaUser },
         { href: '/profile/settings', label: 'Settings', icon: FaCog },
         { href: '/profile/predictions', label: 'My Predictions', icon: FaListAlt },
-        { href: '/profile/statistics', label: 'Statistics', icon: FaChartBar },
-        { href: '/profile/friends', label: 'Friends', icon: FaUserFriends },
+        { href: '/profile/settings/statistics', label: 'Statistics', icon: FaChartBar },
+        { href: '/profile/friends', label: 'Friends', icon: FaUserFriends, notify: hasPendingFriendRequests || hasPendingLeagueInvites },
     ];
 
     const baseLinkClasses = 'flex items-center p-2 rounded-lg text-gray-300 hover:bg-gray-700 group w-full text-left';
     const activeLinkClasses = 'bg-gray-600 text-white';
+
+    // --- ADD Delete League Handlers ---
+    const openDeleteConfirmation = (league: MyLeagueInfo) => {
+        setLeagueToDelete(league);
+        setIsConfirmDeleteOpen(true);
+    };
+
+    const handleDeleteLeague = async () => {
+        if (!leagueToDelete || !token || isDeletingLeague) return;
+
+        const leagueId = leagueToDelete.leagueId;
+        setIsDeletingLeague(true);
+        setIsConfirmDeleteOpen(false);
+        const toastId = toast.loading(`Deleting league "${leagueToDelete.name}"...`);
+
+        try {
+            // <<< Call the new API function (to be created) >>>
+            await deleteLeagueAdmin(leagueId, token);
+            toast.success(`League "${leagueToDelete.name}" deleted successfully.`, { id: toastId });
+            setLeagueToDelete(null);
+            // Refresh league list
+            fetchMyLeagues();
+        } catch (err) {
+             console.error(`Failed to delete league ${leagueId}:`, err);
+             const message = err instanceof ApiError ? err.message : "Failed to delete league.";
+             toast.error(`Error: ${message}`, { id: toastId });
+        } finally {
+            setIsDeletingLeague(false);
+        }
+    };
+    // --- END Delete League Handlers ---
+
+    // --- >>> ADD RENDER LOG <<< ---
+    console.log('[ProfileSidebar Render] Friend Status:', hasPendingFriendRequests, 'League Status:', hasPendingLeagueInvites);
 
     return (
         <> {/* Use Fragment */}
@@ -89,12 +140,14 @@ export default function ProfileSidebar() {
                         <ul className="space-y-1 font-medium">
                             {mainNavItems.map((item) => (
                                 <li key={item.href}>
-                                    <Link
+                                     <Link
                                         href={item.href}
-                                        className={clsx(baseLinkClasses, pathname === item.href && activeLinkClasses)}
+                                        className={clsx(baseLinkClasses, pathname === item.href && activeLinkClasses, "relative")} // Added relative class
                                     >
                                         <item.icon className="w-5 h-5 text-gray-500 transition duration-75 group-hover:text-gray-200" />
                                         <span className="ms-3 flex-1 whitespace-nowrap">{item.label}</span>
+                                        {/* <<< Conditionally render the dot >>> */}
+                                        {item.notify && <NotificationDot />}
                                     </Link>
                                 </li>
                             ))}
@@ -109,12 +162,14 @@ export default function ProfileSidebar() {
                         {/* Toggle Button */}
                          <button
                             onClick={() => setShowLeagues(!showLeagues)}
-                            className={clsx(baseLinkClasses, "justify-between")}
+                            className={clsx(baseLinkClasses, "justify-between", "relative")}
                          >
-                             <span className='flex items-center'>
+                              <span className='flex items-center'>
                                  <FaTrophy className="w-5 h-5 text-gray-500 transition duration-75 group-hover:text-gray-200" />
                                 <span className="ms-3 flex-1 whitespace-nowrap font-medium">My Leagues</span>
                              </span>
+                             {/* <<< Conditionally render the dot on the toggle button >>> */}
+                             
                              {showLeagues ? <FaChevronDown className="w-3 h-3"/> : <FaChevronRight className="w-3 h-3"/>}
                          </button>
 
@@ -134,35 +189,45 @@ export default function ProfileSidebar() {
                                         ) : (
                                             <ul className="space-y-1">
                                                 {myLeagues.map(league => (
-                                                     <li key={league.leagueId} className="text-xs">
-                                                         {/* --- MODIFICATION: Wrap in Link --- */}
+                                                     // <<< MODIFY li content >>>
+                                                     <li key={league.leagueId} className="group text-xs flex items-center justify-between hover:bg-gray-700/30 rounded-lg"> {/* Add group hover */}
+                                                         {/* Delete Button (Admin Only) */}
+                                                         {league.myLeagueRole === 'ADMIN' && (
+                                                             <Button
+                                                                 variant="ghost"
+                                                                 size="icon"
+                                                                 className="text-gray-500 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity h-6 w-6 p-1 flex-shrink-0" // Show on hover
+                                                                 onClick={(e) => { e.stopPropagation(); openDeleteConfirmation(league); }} // Prevent link navigation
+                                                                 disabled={isDeletingLeague}
+                                                                 aria-label={`Delete league ${league.name}`}
+                                                                 title="Delete League"
+                                                             >
+                                                                 <FaTrashAlt className="h-3 w-3" />
+                                                             </Button>
+                                                         )}
+                                                          {/* Filler space if not admin to keep alignment */}
+                                                         {league.myLeagueRole !== 'ADMIN' && (
+                                                            <div className="w-6 h-6 flex-shrink-0"></div>
+                                                         )}
+
+                                                         {/* Link to League */}
                                                          <Link
-                                                            href={`/leagues/${league.leagueId}`} // Link to league details page
-                                                            className={clsx(
-                                                                "flex items-center justify-between p-1.5 rounded-lg text-gray-300 hover:bg-gray-700/50 group w-full text-left",
-                                                                // Optionally highlight active league page?
-                                                                // pathname === `/leagues/${league.leagueId}` && "bg-gray-600 text-white"
-                                                            )}
+                                                            href={`/leagues/${league.leagueId}`}
+                                                            className="flex-grow flex items-center justify-between p-1.5 text-gray-300 group-hover:text-white" // Adjusted classes for inner link
                                                          >
-                                                            {/* League Name */}
                                                             <span className="ms-1 flex-grow whitespace-nowrap truncate" title={league.name}>
                                                                 {league.name}
                                                             </span>
-                                                            {/* Role Badge */}
-                                                             <span className={`ml-2 flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${league.myLeagueRole === 'ADMIN' ? 'bg-blue-600 text-blue-100' : 'bg-gray-600 text-gray-200'}`}>
+                                                            <span className={`ml-2 flex-shrink-0 text-xs px-1.5 py-0.5 rounded font-medium ${league.myLeagueRole === 'ADMIN' ? 'bg-blue-600 text-blue-100' : 'bg-gray-600 text-gray-200'}`}>
                                                                 {league.myLeagueRole}
                                                              </span>
                                                          </Link>
-                                                         {/* --- END Link --- */}
 
-                                                         {/* Conditionally show Invite Code for Admins */}
-                                                         {league.myLeagueRole === 'ADMIN' && league.inviteCode && (
-                                                            <div className="pl-4 pr-1.5 py-0.5 text-xs text-sky-300 bg-gray-700 rounded-b-md -mt-1 flex items-center justify-between">
-                                                                <span>Code: <strong className="font-mono">{league.inviteCode}</strong></span>
-                                                                {/* Add copy button here if desired later */}
-                                                            </div>
-                                                         )}
+                                                         {/* --- REMOVE Invite Code Div --- */}
+                                                         {/* {league.myLeagueRole === 'ADMIN' && league.inviteCode && ( ... )} */}
+                                                         {/* --- END REMOVAL --- */}
                                                      </li>
+                                                    // <<< END MODIFY li content >>>
                                                 ))}
                                             </ul>
                                         )}
@@ -195,6 +260,21 @@ export default function ProfileSidebar() {
                  onClose={() => setIsJoinLeagueModalOpen(false)}
                  onLeagueJoined={fetchMyLeagues}
             />
+
+            {/* --- ADD Delete League Confirmation Modal --- */}
+            <ConfirmationModal
+                isOpen={isConfirmDeleteOpen}
+                onClose={() => setIsConfirmDeleteOpen(false)}
+                onConfirm={handleDeleteLeague}
+                title="Confirm League Deletion"
+                message={
+                    <span>Are you sure you want to permanently delete the league <strong className="text-red-300">“{leagueToDelete?.name}“</strong>? This action cannot be undone.</span>
+                }
+                confirmText="Delete League"
+                confirmButtonVariant="danger"
+                isConfirming={isDeletingLeague}
+            />
+            {/* --- END Delete Modal --- */}
         </>
     );
 }

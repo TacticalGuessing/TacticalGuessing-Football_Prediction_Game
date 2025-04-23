@@ -11,7 +11,7 @@ const Card = React.forwardRef<
     ref={ref}
     // Example styling - adjust bg, border, shadow, text color based on theme vars or concrete values
     className={clsx(
-      'rounded-sm border bg-card text-card-foreground shadow-sm', // Assumes theme vars
+      'rounded-sm border bg-card text-card-foreground shadow-sm bg-gray-800 dark:bg-gray-800 border-r border-gray-700 dark:border-gray-700', // Assumes theme vars
       // Example concrete: 'rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow-md',
       className
     )}

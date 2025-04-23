@@ -3,6 +3,10 @@ const express = require('express');
 const asyncHandler = require('express-async-handler');
 const { protect } = require('../middleware/authMiddleware'); // Adjust path
 const leagueController = require('../src/controllers/leagueController'); // Adjust path
+const {
+    leaveLeague, // <<< ENSURE THIS IS PRESENT
+    deleteLeague
+} = require('../src/controllers/leagueController');
 
 const router = express.Router();
 
@@ -31,5 +35,14 @@ router.delete('/:leagueId/members/:memberUserId', asyncHandler(leagueController.
 
 // PATCH /api/leagues/:leagueId/invite-code - Regenerate code (League Admin)
 router.patch('/:leagueId/invite-code', asyncHandler(leagueController.regenerateInviteCode));
+
+// POST /api/leagues/:leagueId/invites
+router.post('/:leagueId/invites', asyncHandler(leagueController.inviteFriendsToLeague));
+
+// DELETE /api/leagues/:leagueId/membership - User leaves the specified league
+router.delete('/:leagueId/membership', asyncHandler(leaveLeague));
+
+// DELETE /api/leagues/:leagueId
+router.delete('/:leagueId', asyncHandler(deleteLeague));
 
 module.exports = router;

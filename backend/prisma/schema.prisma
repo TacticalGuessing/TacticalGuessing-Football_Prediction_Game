@@ -88,14 +88,17 @@ model LeagueMembership {
   leagueId     Int      @map("league_id")
   userId       Int      @map("user_id")
   role         String   // 'ADMIN' (creator) or 'MEMBER'
-  joinedAt     DateTime @default(now()) @map("joined_at")
+  joinedAt     DateTime? @map("joined_at") // <<< MADE OPTIONAL (nullable)
+  status       String    @map("status") // Status: ACCEPTED, INVITED -- REMOVED DEFAULT
+  invitedAt    DateTime? @map("invited_at") // Timestamp when invite was sent
+
 
   // Relations
   league        League   @relation("LeagueMembers", fields: [leagueId], references: [leagueId], onDelete: Cascade)
   user          User     @relation("LeagueMember", fields: [userId], references: [userId], onDelete: Cascade)
 
   @@unique([leagueId, userId])
-  @@index([userId])
+  @@index([userId, status])
   @@map("league_memberships")
 }
 

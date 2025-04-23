@@ -19,6 +19,8 @@ import {
 import { toast } from 'react-hot-toast';
 //import { formatDistanceToNow } from 'date-fns'; // Keep if needed for request timestamps
 
+import { PendingLeagueInvites } from '@/components/Leagues/PendingLeagueInvites'; // Adjust path if needed
+
 // Import UI Components
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/Card';
 import Spinner from '@/components/ui/Spinner';
@@ -47,7 +49,7 @@ function debounce<F extends (...args: any[]) => any>(func: F, waitFor: number) {
 
 // --- Component ---
 export default function FriendsPage() {
-    const { user, token, isLoading: isAuthLoading } = useAuth();
+    const { user, token, isLoading: isAuthLoading, refreshNotificationStatus } = useAuth();
 
     // --- State ---
     const [myFriends, setMyFriends] = useState<FriendUser[]>([]);
@@ -121,29 +123,33 @@ export default function FriendsPage() {
          }, 500), // 500ms debounce delay
      [token]); // Include token if needed by searchUsers, otherwise empty array
 
-    // --- Handler Functions ---
-    const handleAcceptRequest = async (requestId: number) => {
-        if (!token) return;
+     // --- Handler Functions (Modify Accept/Reject, Keep Others) ---
+     const handleAcceptRequest = useCallback(async (requestId: number) => {
+        if (!token || actioningRequestId) return;
         setActioningRequestId(requestId);
         try {
             await acceptFriendRequest(requestId, token);
             toast.success("Friend request accepted!");
-            fetchMyFriends(); // Refetch friends
-            fetchPendingRequests(); // Refetch requests
+            fetchMyFriends();
+            fetchPendingRequests();
+            refreshNotificationStatus?.(); // <<< ADD THIS CALL
         } catch (err) { const msg = err instanceof ApiError ? err.message : "Failed to accept request."; toast.error(msg); }
         finally { setActioningRequestId(null); }
-    };
+        // <<< ADD refreshNotificationStatus to dependencies >>>
+   }, [token, fetchMyFriends, fetchPendingRequests, actioningRequestId, refreshNotificationStatus]);
 
-    const handleRejectRequest = async (requestId: number) => {
-         if (!token) return;
-         setActioningRequestId(requestId);
-        try {
-            await rejectFriendRequest(requestId, token);
-            toast.success("Friend request rejected.");
-            fetchPendingRequests(); // Refetch requests
-        } catch (err) { const msg = err instanceof ApiError ? err.message : "Failed to reject request."; toast.error(msg); }
-        finally { setActioningRequestId(null); }
-    };
+   const handleRejectRequest = useCallback(async (requestId: number) => {
+    if (!token || actioningRequestId) return;
+    setActioningRequestId(requestId);
+    try {
+        await rejectFriendRequest(requestId, token);
+        toast.success("Friend request rejected.");
+        fetchPendingRequests();
+        refreshNotificationStatus?.(); // <<< ADD THIS CALL
+    } catch (err) { const msg = err instanceof ApiError ? err.message : "Failed to reject request."; toast.error(msg); }
+    finally { setActioningRequestId(null); }
+    // <<< ADD refreshNotificationStatus to dependencies >>>
+}, [token, fetchPendingRequests, actioningRequestId, refreshNotificationStatus]);
 
     const openRemoveConfirmation = (friend: FriendUser) => {
         setFriendToRemove(friend);
@@ -208,6 +214,14 @@ export default function FriendsPage() {
         }
     }, [token, isAuthLoading, fetchMyFriends, fetchPendingRequests]); // Include all fetch functions
 
+    // --- >>> ADD Callback for Invite Actions <<< ---
+    const handleInviteAction = useCallback(() => {
+        console.log("FriendsPage: handleInviteAction called. Calling refreshNotificationStatus..."); // <<< ADD LOG
+        refreshNotificationStatus?.(); // Refresh notifications via context
+    // Ensure refreshNotificationStatus is stable or included in dependencies if needed elsewhere
+    }, [refreshNotificationStatus]);
+    // --- End Callback ---
+
     // --- Render Logic ---
     if (isAuthLoading) {
         return <div className="p-6 text-center"><Spinner /> Loading...</div>;
@@ -221,6 +235,11 @@ export default function FriendsPage() {
             <h1 className="text-2xl md:text-3xl font-bold text-gray-100 flex items-center">
                 <FaUsers className="mr-3 text-gray-400" /> Friends
             </h1>
+
+            {/* --- >>> ADD Pending League Invites Component Rendering <<< --- */}
+             {/* Place it strategically, e.g., before the main grid */}
+             <PendingLeagueInvites onInviteAction={handleInviteAction} />
+             {/* --- End Render Component --- */}
 
             {/* Main Grid for Layout */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
