@@ -1127,7 +1127,16 @@ export const deleteFixture = async (fixtureId: number, token: string): Promise<v
 export const enterFixtureResult = async (fixtureId: number, payload: ResultPayload, token: string): Promise<Fixture> => {
     const endpoint = `/fixtures/${fixtureId}/result`;
     try {
-        const response = await fetchWithAuth(endpoint, { method: 'PUT', body: JSON.stringify(payload) }, token);
+        // Pass the raw payload object, but assert its type for fetchWithAuth
+        const response = await fetchWithAuth(
+            endpoint,
+            {
+                method: 'PUT',
+                // <<< ADD Type Assertion Here >>>
+                body: payload as unknown as Record<string, unknown>
+            },
+            token
+        );
         // PUT often returns 200 OK with the updated resource, or 204 No Content
         if (response.status === 204) {
              console.warn("Fixture result updated successfully, but no updated data was returned (Status 204).");
