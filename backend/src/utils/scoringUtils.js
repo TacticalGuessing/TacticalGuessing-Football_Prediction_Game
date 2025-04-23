@@ -19,64 +19,54 @@ const { Prisma } = require('@prisma/client'); // Keep if needed
  * @returns {number} The calculated points (integer).
  */
 function calculatePoints(prediction, actualResult) {
-    // Destructure prediction fields including is_joker
+    // Destructure prediction fields (make sure these match DB columns: snake_case)
     const { predicted_home_goals, predicted_away_goals, is_joker } = prediction;
-    // Destructure actual result fields
+    // Destructure actual result fields (make sure these match DB columns: snake_case)
     const { home_score, away_score } = actualResult;
 
     // --- Input Validation ---
-    // Ensure all necessary score values are present and non-null
-    if (
-        predicted_home_goals === null || predicted_away_goals === null ||
-        home_score === null || away_score === null
-    ) {
-        // If any required score is missing (e.g., prediction not made, or result not entered), award 0 points.
+    if ( predicted_home_goals === null || predicted_away_goals === null || home_score === null || away_score === null ) {
         return 0;
     }
-
-    // Convert scores to numbers for comparison
     const predHome = Number(predicted_home_goals);
     const predAway = Number(predicted_away_goals);
     const actualHome = Number(home_score);
     const actualAway = Number(away_score);
-
-    // Further validation: Ensure scores are valid non-negative numbers after conversion
-    if (
-        isNaN(predHome) || isNaN(predAway) || isNaN(actualHome) || isNaN(actualAway) ||
-        predHome < 0 || predAway < 0 || actualHome < 0 || actualAway < 0
-    ) {
-        // Log an error if scores are invalid (e.g., negative numbers, non-numeric strings passed validation)
-        console.error("Invalid score values encountered during point calculation:", { prediction, actualResult });
-        return 0; // Award 0 points for invalid data
+    if ( isNaN(predHome) || isNaN(predAway) || isNaN(actualHome) || isNaN(actualAway) || predHome < 0 || predAway < 0 || actualHome < 0 || actualAway < 0 ) {
+        console.error("[calculatePoints] Invalid score values:", { prediction, actualResult });
+        return 0;
     }
     // --- End Input Validation ---
 
     // --- Calculate Base Points ---
     let basePoints = 0;
-
-    // Rule 1: Exact Score Match
-    if (predHome === actualHome && predAway === actualAway) {
+    if (predHome === actualHome && predAway === actualAway) { // Exact Score
         basePoints = 3;
-    } else {
-        // Rule 2: Correct Outcome Match (if not an exact score match)
-        const predictedOutcome = predHome > predAway ? 'H' : (predHome < predAway ? 'A' : 'D'); // Home win, Away win, Draw
+    } else { // Check Outcome
+        const predictedOutcome = predHome > predAway ? 'H' : (predHome < predAway ? 'A' : 'D');
         const actualOutcome = actualHome > actualAway ? 'H' : (actualHome < actualAway ? 'A' : 'D');
-
         if (predictedOutcome === actualOutcome) {
             basePoints = 1;
         }
-        // Otherwise, basePoints remains 0 (incorrect outcome and not exact match)
     }
     // --- End Calculate Base Points ---
 
-
     // --- Apply Joker Bonus ---
-    // Double the points ONLY if the joker was used AND base points were earned (i.e., prediction was correct in some way)
     const finalPoints = (is_joker === true && basePoints > 0) ? (basePoints * 2) : basePoints;
     // --- End Apply Joker Bonus ---
 
-    return finalPoints; // Return the final calculated points
-}
+    // Make sure this return statement is the very last line inside the function
+    return finalPoints;
+} // <-- End of calculatePoints function
+
+// ... other functions like getResultString, calculateStandings ...
+
+// --- Check the Label on the Rule Book (Exports) ---
+// Make sure 'calculatePoints' is listed here so others can find it.
+module.exports = {
+    calculatePoints,
+    calculateStandings, // Keep this if other files use it
+};
 
 // --- Helper Function ---
 // FIX: Remove TS type annotations from parameters/return if this is pure JS
@@ -178,16 +168,13 @@ async function calculateStandings(roundId = null, filterUserIds = null) {
         return rankedStandings;
 
     } catch (error) {
-        console.error(`Error in calculateStandings (Utils) (roundId: ${roundId}, filterUsers: ${filterUserIds?.length}):`, error);
+        console.log(`---> [INSIDE scoringUtils.calculatePoints] Returning: ${finalPoints} (Type: ${typeof finalPoints})`);
         throw new Error('Failed to calculate standings.');
     }
 }
 // --- END calculateStandings ---
 
-// Keep original calculatePoints function
-function calculatePoints(prediction, actualResult) {
-    // ... your existing function code ...
-}
+
 
 
 // --- Update Exports ---
