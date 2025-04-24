@@ -19,6 +19,12 @@ model User {
   avatarUrl     String?   @map("avatar_url") // Future placeholder
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())
+  // --- ADD Verification & Subscription Fields ---
+  emailVerified          Boolean  @default(false) @map("email_verified")
+  emailVerificationToken String?  @unique @map("email_verification_token") // Token sent via email
+  subscriptionTier       String   @default("FREE") @map("subscription_tier") // e.g., "FREE", "PREMIUM"
+  // subscriptionExpiresAt DateTime? @map("subscription_expires_at") // Optional for later
+  // --- END Added Fields ---
   rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]
   postedNews    NewsItem[]   @relation("PostedNews")

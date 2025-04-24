@@ -538,7 +538,11 @@ interface RegenerateCodeResponse {
     inviteCode: string; // The NEW invite code
 }
 
-
+// Type for the verification response
+interface VerificationResponse {
+    success: boolean;
+    message: string;
+}
 
 // --- End Custom API Error Class ---
 
@@ -2238,7 +2242,57 @@ export async function fetchRoundResultsAdmin(roundId: number, token: string): Pr
     }
 }
 // --- End NEW League Invite API Functions ---
+
+/**
+ * Sends the email verification token to the backend.
+ */
+export async function verifyEmail(token: string): Promise<VerificationResponse> {
+    // GET /api/auth/verify-email/:token
+    const url = `${API_BASE_URL}/auth/verify-email/${token}`;
+    console.log(`%c[api.ts] Calling verifyEmail: GET ${url}`, 'color: cyan;');
+
+    try {
+        // Use axios.get for a GET request
+        const response = await axios.get<VerificationResponse>(url);
+        console.log(`%c[verifyEmail] Success response status: ${response.status}`, 'color: cyan;');
+        return response.data; // Expect { success, message }
+    } catch (error) {
+        console.error(`%c[verifyEmail] Error verifying token:`, 'color: red; font-weight: bold;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Email verification failed';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode); // Throw custom error
+    }
+}
+
 // --- End League API Functions ---
+
+interface ResendResponse { // Simple response type
+    message: string;
+}
+
+/**
+ * Requests the backend to resend the verification email for the given email address.
+ */
+export async function resendVerificationEmail(email: string): Promise<ResendResponse> {
+    const url = `${API_BASE_URL}/auth/resend-verification`;
+    console.log(`%c[api.ts] Calling resendVerificationEmail for: ${email}`, 'color: magenta;');
+
+    try {
+        // POST request with email in the body
+        const response = await axios.post<ResendResponse>(url, { email }); // Send email in body
+        console.log(`%c[resendVerificationEmail] Success response status: ${response.status}`, 'color: magenta;');
+        return response.data; // Expect { message: "..." }
+    } catch (error) {
+        console.error(`%c[resendVerificationEmail] Error resending for ${email}:`, 'color: red; font-weight: bold;', error);
+        const message = axios.isAxiosError(error) && error.response?.data?.message
+            ? error.response.data.message
+            : 'Failed to resend verification email';
+        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
+        throw new ApiError(message, statusCode);
+    }
+}
 
 // Optional: Add function to get sent pending requests if needed
 // export async function getSentRequests(token: string): Promise<SentFriendRequest[]> { ... }
