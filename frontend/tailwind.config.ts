@@ -1,6 +1,7 @@
 // frontend/tailwind.config.ts
 import type { Config } from 'tailwindcss';
 import formsPlugin from '@tailwindcss/forms';
+import typographyPlugin from '@tailwindcss/typography';
 
 const config: Config = {
   content: [ /* ... */ ],
@@ -33,7 +34,7 @@ const config: Config = {
       fontFamily: { /* ... */ },
     },
   },
-  plugins: [ formsPlugin ],
+  plugins: [ formsPlugin, typographyPlugin],
    // Add corePlugins section to ensure variables are processed? (Check v4 docs)
    // corePlugins: {
    //   preflight: true, // Ensure preflight runs

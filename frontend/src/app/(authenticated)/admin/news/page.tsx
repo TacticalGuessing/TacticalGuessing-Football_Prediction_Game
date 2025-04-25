@@ -58,7 +58,7 @@ export default function AdminPostNewsPage() {
                 <FaNewspaper className="mr-3 text-gray-400" /> Post News Update
             </h1>
 
-             {/* Use Card for the form */}
+            {/* Use Card for the form */}
             <Card className="w-full max-w-2xl mx-auto dark:bg-gray-800 border border-gray-700">
                 <CardHeader>
                     <CardTitle>Create New Post</CardTitle>
@@ -81,6 +81,11 @@ export default function AdminPostNewsPage() {
                                 className="w-full rounded-md border-gray-600 bg-gray-700 text-gray-100 focus:border-primary-focus-ring focus:ring-primary-focus-ring disabled:opacity-50" // Example styling if using HTML textarea - adjust if using component
                                 disabled={isSubmitting}
                             />
+                            {/* --- ADD THIS HINT --- */}
+                            <p className="mt-1 text-xs text-gray-400">
+                                Basic Markdown is supported (e.g., **bold**, *italic*, - lists, [links](...)).
+                            </p>
+                            {/* --- END HINT --- */}
                         </div>
                     </CardContent>
                     <CardFooter className="flex justify-end">

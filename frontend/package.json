@@ -13,6 +13,7 @@
   "dependencies": {
     "@radix-ui/react-checkbox": "^1.1.5",
     "@radix-ui/react-select": "^2.1.7",
+    "@tailwindcss/typography": "^0.5.16",
     "axios": "^1.8.4",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
@@ -23,7 +24,9 @@
     "react-dom": "^18.3.1",
     "react-hot-toast": "^2.5.2",
     "react-icons": "^5.5.0",
-    "recharts": "^2.15.2"
+    "react-markdown": "^10.1.0",
+    "recharts": "^2.15.2",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

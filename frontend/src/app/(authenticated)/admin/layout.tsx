@@ -38,7 +38,7 @@ export default function AdminLayout({
       <AdminSidebar onOpenCreateRoundModal={openCreateModal} />
 
       {/* Main content area */}
-      <main className="flex-1 p-4 sm:ml-64 pt-2">
+      <main className="flex-1 p-4 sm:ml-64 pt-1">
         {children}
       </main>
 

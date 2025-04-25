@@ -4,6 +4,8 @@
 // --- Imports ---
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import ReactMarkdown from 'react-markdown'; // <<< ADD THIS
+import remarkGfm from 'remark-gfm';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'react-hot-toast'; // <-- Import toast
 
@@ -258,23 +260,61 @@ export default function DashboardPage() {
         if (newsError) return <p className="text-red-400 text-sm">Error: {newsError}</p>;
         if (newsItems.length > 0) {
             return (
-                <div className="space-y-2"> {/* Adjusted spacing */}
+                // Main container for news items list
+                <div className="space-y-4"> {/* Added padding-top here */}
                     {newsItems.map((item) => (
-                        <div key={item.newsItemId} className="pb-2 border-b border-gray-700 last:border-b-0"> {/* Adjusted spacing */}
-                            <p className="text-sm text-gray-200 mb-0.5">{item.content}</p> {/* Adjusted spacing */}
-                            <div className="flex justify-between items-center"> {/* Adjusted spacing */}
+                        // Container for a single news item
+                        <div key={item.newsItemId} className="pb-3 border-b border-gray-700 last:border-b-0">
+    
+                            {/* --- START: Markdown Rendering Area --- */}
+                            <div className="prose prose-sm prose-invert dark:prose-invert max-w-none text-gray-200"> {/* prose styles the markdown */}
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm]} // Enable GFM features
+                                    components={{
+                                        // Customize link rendering
+                                        a: (props) => (
+                                            <a
+                                                {...props}
+                                                target="_blank" // Open links in new tab
+                                                rel="noopener noreferrer" // Security measure
+                                                className="text-blue-400 hover:text-blue-300 hover:underline break-words" // Style links
+                                            />
+                                        ),
+                                        // Ensure paragraphs have appropriate margins within prose context
+                                        p: (props) => <p {...props} className="mb-2" />,
+                                    }}
+                                >
+                                    {item.content}
+                                </ReactMarkdown>
+                            </div>
+                            {/* --- END: Markdown Rendering Area --- */}
+    
+                            {/* Meta information (Author, Date, Delete Button) */}
+                            <div className="flex justify-between items-center mt-1"> {/* Added margin-top */}
                                 <p className="text-xs text-gray-500">
                                     {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
                                     {item.postedBy?.name && (<span className="ml-1"> by {item.postedBy.name}</span>)}
                                 </p>
-                                {user?.role === 'ADMIN' && (<Button variant="ghost" size="icon" className="text-red-500 hover:text-red-400 hover:bg-red-900/20 h-5 w-5 p-0.5" onClick={() => openNewsDeleteConfirmation(item)} disabled={isDeletingNews === item.newsItemId} isLoading={isDeletingNews === item.newsItemId} title="Delete News Item" > {isDeletingNews !== item.newsItemId && <FaTrashAlt className="h-3 w-3" />} </Button>)}
+                                {user?.role === 'ADMIN' && (
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-red-500 hover:text-red-400 hover:bg-red-900/20 h-5 w-5 p-0.5"
+                                        onClick={() => openNewsDeleteConfirmation(item)}
+                                        disabled={isDeletingNews === item.newsItemId}
+                                        isLoading={isDeletingNews === item.newsItemId}
+                                        title="Delete News Item"
+                                    >
+                                        {isDeletingNews !== item.newsItemId && <FaTrashAlt className="h-3 w-3" />}
+                                    </Button>
+                                )}
                             </div>
                         </div>
                     ))}
                 </div>
             );
         }
-        return <p className="text-gray-500 italic text-sm">No news items available.</p>;
+        return <p className="text-gray-500 italic text-sm pt-1">No news items available.</p>; // Added padding-top here too
     };
 
     // --- Main Render ---
@@ -283,7 +323,7 @@ export default function DashboardPage() {
     }
 
     return (
-        <div className="space-y-4 p-4 md:p-6"> {/* Main container */}
+        <div className="space-y-4 p-2 md:p-1"> {/* Main container */}
             {/* 1. Title */}
             <h1 className="text-1xl md:text-1xl font-bold text-gray-100"> Welcome{user?.name ? `, ${user.name}` : ''}! </h1>
 
@@ -318,22 +358,22 @@ export default function DashboardPage() {
 
                         
 
-                    <Card className={sectionContainerClasses + " p-4 md:p-6"}>
-                        <CardHeader className="p-0 mb-0"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center"><FaNewspaper className="mr-3 text-gray-400" /> News & Updates</CardTitle></CardHeader>
+                    <Card className={sectionContainerClasses + " p-4 md:p-0"}>
+                    <CardHeader className="mb-0 px-4 py-2 bg-green-900 rounded-t-sm"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center !mb-1"><FaNewspaper className="mr-3 text-gray-400" /> News & Updates</CardTitle></CardHeader>
                         <CardContent className="p-0">{renderNewsContent()}</CardContent>
                     </Card>
                 </div>
 
                 {/* ===== Right Column (Highlights & Standings - Smaller) ===== */}
                 <div className="lg:col-span-2 space-y-4"> {/* Keep space-y here for between cards */}
-                    <Card className={sectionContainerClasses + " p-4 md:p-6"}>
-                        <CardHeader className="p-0 mb-0"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center"><FaStar className="mr-3 text-yellow-400" /> Highlights</CardTitle></CardHeader>
+                    <Card className={sectionContainerClasses + " p-4 md:p-0 hidden"}>
+                    <CardHeader className="mb-0 px-4 py-2 bg-green-900 rounded-t-sm"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center !mb-1"><FaStar className="mr-3 text-yellow-400" /> Highlights</CardTitle></CardHeader>
                         <CardContent className="p-0">{renderHighlightsContent()}</CardContent>
                     </Card>
 
-                    <Card className={sectionContainerClasses + " p-4 md:p-6"}> {/* Keep main card padding */}
-                        <CardHeader className="p-0 mb-0">
-                            <CardTitle className="text-xl font-semibold text-gray-200 flex items-center ">
+                    <Card className={sectionContainerClasses + " p-4 md:p-0"}> {/* Keep main card padding */}
+                    <CardHeader className="mb-0 px-4 py-2 bg-green-900 rounded-t-sm">
+                            <CardTitle className="text-xl font-semibold text-gray-200 flex items-center !mb-1 ">
                                 <FaTrophy className="mr-3 text-amber-400" /> Standings
                             </CardTitle>
                         </CardHeader>
@@ -343,7 +383,7 @@ export default function DashboardPage() {
                             {standingsError && <p className="text-center text-red-400 py-4">{standingsError}</p>}
                             {!isLoadingStandings && !standingsError && (
                                 // REMOVED max-h, KEEP overflow-x-hidden
-                                <div className="overflow-y-auto overflow-x-hidden"> {/* Removed max-h, kept overflow-x-hidden */}
+                                <div className="overflow-y-auto overflow-x-hidden pt-1"> {/* Removed max-h, kept overflow-x-hidden */}
                                     <Table>
                                         <TableHeader>
                                             {/* Use slightly more padding maybe? */}
