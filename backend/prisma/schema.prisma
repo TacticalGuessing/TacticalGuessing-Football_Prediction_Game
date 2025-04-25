@@ -43,6 +43,7 @@ model Round {
   name          String
   deadline      DateTime
   status        String
+  jokerLimit    Int       @default(1) @map("joker_limit")
   createdByUserId Int     @map("created_by")
   createdAt     DateTime  @default(now()) @map("created_at")
   updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") // <<< MODIFIED: Added @default(now())

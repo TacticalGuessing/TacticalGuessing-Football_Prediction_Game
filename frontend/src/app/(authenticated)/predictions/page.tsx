@@ -42,13 +42,16 @@ export default function PredictionsPage() {
     // State for active round data
     const [activeRound, setActiveRound] = useState<ActiveRoundResponse | null>(null);
     const [predictions, setPredictions] = useState<Map<number, PredictionInput>>(new Map()); // Map fixtureId -> PredictionInput
-    const [jokerFixtureId, setJokerFixtureId] = useState<number | null>(null);
+    
 
     // Loading and Error States
     const [isLoadingRound, setIsLoadingRound] = useState(true);
     const [roundError, setRoundError] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [isGenerating, setIsGenerating] = useState(false);
+
+    const currentJokerCount = Array.from(predictions.values()).filter(p => p.isJoker).length;
+
 
     // Fetch Active Round Data
     const fetchRoundData = useCallback(async () => {
@@ -62,7 +65,7 @@ export default function PredictionsPage() {
             if (data) {
                 // Initialize predictions state based on fetched data
                 const initialPredictions = new Map<number, PredictionInput>();
-                let initialJoker: number | null = null;
+                
                 data.fixtures.forEach(fixture => {
                     initialPredictions.set(fixture.fixtureId, {
                         fixtureId: fixture.fixtureId,
@@ -72,12 +75,10 @@ export default function PredictionsPage() {
                         awayInput: fixture.predictedAwayGoals?.toString() ?? '', // Populate input string
                         isJoker: fixture.isJoker || false,
                     });
-                    if (fixture.isJoker) {
-                        initialJoker = fixture.fixtureId;
-                    }
+                    
                 });
                 setPredictions(initialPredictions);
-                setJokerFixtureId(initialJoker);
+                
                  console.log('%c[PredictionsPage] Active round fetched and state initialized.', 'color: green');
             } else {
                  console.log('%c[PredictionsPage] No active round found.', 'color: orange;');
@@ -133,20 +134,29 @@ export default function PredictionsPage() {
 
     // Handle Joker selection
     const handleJokerChange = (fixtureId: number) => {
+        const currentPrediction = predictions.get(fixtureId);
+        if (!currentPrediction || !activeRound) return; // Safety checks
+
+        const isCurrentlyJoker = currentPrediction.isJoker;
+       const limit = activeRound.jokerLimit;
+
+       // Check limit ONLY if trying to ADD a new joker
+       if (!isCurrentlyJoker && currentJokerCount >= limit) {
+           toast.error(`Joker limit reached (${limit} allowed).`);
+           return; // Prevent selection
+       }
+
         setPredictions(prev => {
             const newPredictions = new Map(prev);
-            // Clear previous joker
-            if (jokerFixtureId !== null) {
-                const oldJoker = newPredictions.get(jokerFixtureId);
-                if (oldJoker) newPredictions.set(jokerFixtureId, { ...oldJoker, isJoker: false });
+            const predictionToUpdate = newPredictions.get(fixtureId);
+            if (predictionToUpdate) {
+               // Toggle the joker status for the clicked fixture
+               newPredictions.set(fixtureId, { ...predictionToUpdate, isJoker: !isCurrentlyJoker });
             }
-            // Set new joker
-            const newJoker = newPredictions.get(fixtureId);
-            if (newJoker) newPredictions.set(fixtureId, { ...newJoker, isJoker: true });
-
+           // Remove logic that clears the previous single jokerFixtureId
             return newPredictions;
         });
-        setJokerFixtureId(fixtureId);
+       // Remove setJokerFixtureId(fixtureId);
     };
 
     // Handle Save Predictions
@@ -225,6 +235,7 @@ export default function PredictionsPage() {
     // --- ADD THIS LINE ---
     // Determine combined disabled state for inputs/buttons
     const isSubmitDisabled = isSaving || isGenerating || isDeadlinePassed;
+    const jokerLimitReached = currentJokerCount >= activeRound.jokerLimit;
     // --- END ADDED LINE ---
 
     return (
@@ -249,6 +260,13 @@ export default function PredictionsPage() {
                     {/* {!isDeadlinePassed && activeRound.deadline && <CountdownTimer deadline={activeRound.deadline} />} */}
                 </div>
                 {/* Deadline passed message */}
+                {/* Joker Limit Display */}
+               <div className="mt-1 text-sm">
+                   <span>Jokers Used: </span>
+                   <span className={`font-semibold ${jokerLimitReached ? 'text-red-400' : 'text-gray-100'}`}>
+                       {currentJokerCount} / {activeRound.jokerLimit}
+                   </span>
+               </div>
                 {isDeadlinePassed && (
                     <p className="mt-2 text-center text-sm text-red-300 font-semibold italic">
                         Predictions are now closed for this round.
@@ -264,7 +282,7 @@ export default function PredictionsPage() {
     // Get current prediction state for this fixture
     const currentPrediction = predictions.get(fixture.fixtureId);
     // Determine if this fixture is the selected joker
-    const isJoker = jokerFixtureId === fixture.fixtureId;
+    const isJoker = currentPrediction?.isJoker ?? false; // New way: check map state
 
     // Return the styled JSX for each fixture row
     return (
@@ -282,11 +300,15 @@ export default function PredictionsPage() {
                <button
                    type="button"
                    onClick={() => handleJokerChange(fixture.fixtureId)}
-                   disabled={isSubmitDisabled}
+                   // Disable if deadline passed OR if trying to add joker beyond limit
+                                  disabled={isSubmitDisabled || (!isJoker && jokerLimitReached)}
                    className={`p-1 rounded-full transition-all duration-150  ${
-                       isSubmitDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-110 hover:opacity-100'
+                       // Add disabled state for limit reached
+                                      (isSubmitDisabled || (!isJoker && jokerLimitReached))
+                                          ? 'opacity-40 cursor-not-allowed'
+                                          : 'hover:scale-110 hover:opacity-100'
                    } ${isJoker ? 'opacity-100 scale-110' : 'opacity-60'}`} // Brighter/bigger if selected
-                   title={isJoker ? "Clear Joker" : "Set as Joker (double points)"}
+                   title={isJoker ? "Clear Joker" : (jokerLimitReached ? `Joker limit (${activeRound.jokerLimit}) reached` : "Set as Joker (double points)")}
                    aria-label={isJoker ? `Clear Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}` : `Set Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}`}
                >
                    <Image

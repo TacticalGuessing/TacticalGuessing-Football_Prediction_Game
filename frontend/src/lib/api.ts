@@ -132,6 +132,7 @@ export interface ActiveRoundResponse {
     name: string;
     deadline: string;
     status: 'SETUP' | 'OPEN' | 'CLOSED' | 'COMPLETED'; // Match Round['status']
+    jokerLimit: number;
     fixtures: FixtureWithPrediction[];
 }
 
@@ -200,7 +201,8 @@ export interface StandingEntry {
 // Payload for creating a round
 export interface CreateRoundPayload {
     name: string;
-    deadline: string; // Expecting ISO format string (or datetime-local string if backend handles it)
+    deadline: string;
+    jokerLimit?: number;
 }
 
 // Payload for updating round status

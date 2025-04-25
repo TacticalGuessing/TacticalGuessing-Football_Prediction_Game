@@ -40,11 +40,22 @@ router.post('/:roundId/fetch-results', protect, admin, fetchRoundResults);
 
 // POST /api/rounds - Create a new round
 router.post('/', protect, admin, async (req, res, next) => {
-    const { name, deadline } = req.body; // Expect name (string) and deadline (ISO 8601 string e.g., "2024-08-15T18:00:00Z" or YYYY-MM-DDTHH:MM)
+    const { name, deadline, jokerLimit } = req.body; // Expect name (string) and deadline (ISO 8601 string e.g., "2024-08-15T18:00:00Z" or YYYY-MM-DDTHH:MM)
 
     if (!name || !deadline) {
         return res.status(400).json({ message: 'Round name and deadline are required.' });
     }
+
+    // Validate jokerLimit if provided
+   let limit = 1; // Default value
+   if (jokerLimit !== undefined) {
+       const parsedLimit = parseInt(jokerLimit, 10);
+       // Must be a non-negative integer
+       if (isNaN(parsedLimit) || !Number.isInteger(parsedLimit) || parsedLimit < 0) {
+           return res.status(400).json({ message: 'If provided, Jokers Allowed must be a non-negative integer (0 or more).' });
+       }
+       limit = parsedLimit;
+   }
 
     const deadlineDate = new Date(deadline);
     if (isNaN(deadlineDate.getTime())) { // Check getTime() for validity
@@ -56,8 +67,8 @@ router.post('/', protect, admin, async (req, res, next) => {
     try {
         // Use db.query directly as we don't need a transaction here
         const newRound = await db.query(
-            'INSERT INTO rounds (name, deadline, created_by, status, created_at, updated_at) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING *',
-            [name, deadlineISO, req.user.userId, 'SETUP'] // Default status to SETUP
+            'INSERT INTO rounds (name, deadline, created_by, status, joker_limit, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING *', // Add joker_limit column
+           [name, deadlineISO, req.user.userId, 'SETUP', limit]
         );
         res.status(201).json(newRound.rows[0]); // Returns snake_case from DB
     } catch (err) {
@@ -265,7 +276,7 @@ router.get('/', protect, async (req, res, next) => {
 router.get('/active', protect, async (req, res, next) => {
     try {
         // Fetch active round (snake_case)
-        const activeRoundResult = await db.query( "SELECT round_id, name, deadline, status FROM rounds WHERE status = 'OPEN' ORDER BY deadline ASC LIMIT 1" );
+        const activeRoundResult = await db.query( "SELECT round_id, name, deadline, status, joker_limit FROM rounds WHERE status = 'OPEN' ORDER BY deadline ASC LIMIT 1" );
         if (activeRoundResult.rows.length === 0) { return res.status(200).json(null); } // Return null if no active round
         const activeRound = activeRoundResult.rows[0];
         const roundId = activeRound.round_id;
@@ -337,6 +348,7 @@ router.get('/active', protect, async (req, res, next) => {
             name: activeRound.name,
             deadline: activeRound.deadline,
             status: activeRound.status,
+            jokerLimit: activeRound.joker_limit,
             fixtures: fixtures_camel // Use the fully processed camelCase fixtures array
         };
         res.status(200).json(responsePayload);
@@ -972,7 +984,7 @@ router.delete('/:roundId', protect, admin, async (req, res, next) => {
  */
 router.put('/:roundId', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
-    const { name, deadline } = req.body; // Expect camelCase from frontend api.ts
+    const { name, deadline, jokerLimit } = req.body; // Expect camelCase from frontend api.ts
 
     // 1. Validate Round ID
     const parsedRoundId = parseInt(roundId, 10);
@@ -998,6 +1010,15 @@ router.put('/:roundId', protect, admin, async (req, res, next) => {
         deadlineISO = parsedDate.toISOString();
         console.log(`Received deadline "${deadline}", converted to UTC ISO: "${deadlineISO}" for round ${parsedRoundId}`);
     }
+
+    let limitToUpdate = null;
+   if (jokerLimit !== undefined) {
+       const parsedLimit = parseInt(jokerLimit, 10);
+       if (isNaN(parsedLimit) || !Number.isInteger(parsedLimit) || parsedLimit < 0) {
+            return res.status(400).json({ message: 'If provided, Jokers Allowed must be a non-negative integer.' });
+       }
+       limitToUpdate = parsedLimit;
+   }
 
     // 3. Check if Round Exists and Apply Business Logic (e.g., status checks)
     try {
@@ -1030,6 +1051,11 @@ router.put('/:roundId', protect, admin, async (req, res, next) => {
             fieldsToUpdate.push(`deadline = $${paramIndex++}`);
             queryParams.push(deadlineISO);
         }
+
+        if (limitToUpdate !== null) {
+                       fieldsToUpdate.push(`joker_limit = $${paramIndex++}`);
+                       queryParams.push(limitToUpdate);
+                   }
 
         // Check if there's anything to update
         if (fieldsToUpdate.length === 0) {

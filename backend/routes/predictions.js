@@ -175,7 +175,7 @@ router.post('/', protect, async (req, res, next) => {
         console.log(`[${new Date().toISOString()}] Finding active round for POST /predictions...`);
         const activeRound = await prisma.round.findFirst({
             where: { status: 'OPEN' },
-            select: { roundId: true, deadline: true },
+            select: { roundId: true, deadline: true, jokerLimit: true },
             orderBy: { deadline: 'asc' },
         });
         console.log(`[${new Date().toISOString()}] Active round query completed for POST /predictions.`);
@@ -186,6 +186,7 @@ router.post('/', protect, async (req, res, next) => {
         }
         const roundId = activeRound.roundId;
         const deadline = activeRound.deadline;
+        const roundJokerLimit = activeRound.jokerLimit;
         console.log(`[${new Date().toISOString()}] Found active round ${roundId} for POST /predictions.`);
 
         // Validate roundId
@@ -203,9 +204,9 @@ router.post('/', protect, async (req, res, next) => {
 
         // Validate Joker Count
         const jokerPredictionsCount = predictions.filter(p => p.isJoker === true).length;
-        if (jokerPredictionsCount > 1) {
+        if (jokerPredictionsCount > roundJokerLimit) {
              console.warn(`[${new Date().toISOString()}] User ${userId} attempted to submit ${jokerPredictionsCount} jokers for round ${roundId}.`);
-             return res.status(400).json({ message: 'You can only mark one prediction as a Joker per round.' });
+             return res.status(400).json({ message: `Joker limit exceeded. You can only use ${roundJokerLimit} Joker(s) this round.` });
         }
 
         // Prepare upsert operations

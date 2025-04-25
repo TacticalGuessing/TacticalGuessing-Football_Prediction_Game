@@ -25,6 +25,7 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated }: Cr
     // State moved from admin/page.tsx
     const [newRoundName, setNewRoundName] = useState('');
     const [newRoundDeadline, setNewRoundDeadline] = useState('');
+    const [newJokerLimit, setNewJokerLimit] = useState('1');
     const [isCreating, setIsCreating] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
@@ -41,7 +42,21 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated }: Cr
         try {
             // Convert local datetime string to ISO string for backend
             const deadlineISO = new Date(newRoundDeadline).toISOString();
-            await createRound({ name: newRoundName.trim(), deadline: deadlineISO }, token);
+            // Parse and validate joker limit
+           let limitToSend = 1; // Default
+           const parsedLimit = parseInt(newJokerLimit, 10);
+           if (!isNaN(parsedLimit) && Number.isInteger(parsedLimit) && parsedLimit >= 0) {
+               limitToSend = parsedLimit;
+           } else {
+               // Optionally show a warning if input was invalid but still proceed with default
+               console.warn(`Invalid Joker Limit input "${newJokerLimit}", defaulting to 1.`);
+               // Use base toast for informational message
+               toast("Invalid Joker Limit input, using default 1.", {
+                      duration: 2500,
+                      icon: 'ℹ️' // Optional: Add an info icon
+                  });
+           }
+           await createRound({ name: newRoundName.trim(), deadline: deadlineISO, jokerLimit: limitToSend }, token);
 
             toast.success(`Round "${newRoundName.trim()}" created successfully!`);
             setNewRoundName(''); // Reset form inside modal
@@ -63,6 +78,7 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated }: Cr
         if (!isOpen) {
             setNewRoundName('');
             setNewRoundDeadline('');
+            setNewJokerLimit('1');
             setCreateError(null);
             setIsCreating(false); // Ensure loading state is reset
         }
@@ -105,6 +121,23 @@ export default function CreateRoundModal({ isOpen, onClose, onRoundCreated }: Cr
                             />
                              <p className="text-xs text-gray-400 dark:text-gray-400 mt-1">Predictions lock after this time (local timezone).</p>
                         </div>
+                        {/* Joker Limit Input */}
+                       <div className="space-y-1.5">
+                           <Label htmlFor="createJokerLimit">Jokers Allowed Per User</Label>
+                           <Input
+                               id="createJokerLimit"
+                               type="number"
+                               min="0" // Allow 0 jokers
+                               step="1"
+                               value={newJokerLimit}
+                               onChange={(e) => setNewJokerLimit(e.target.value)}
+                               placeholder="e.g., 1"
+                               required
+                               disabled={isCreating}
+                               className="w-24" // Make input smaller
+                           />
+                           <p className="text-xs text-gray-400 dark:text-gray-400 mt-1">Number of Jokers each user can play this round (default 1).</p>
+                       </div>
                     </CardContent>
                     <CardFooter className="flex justify-end gap-3">
                         <Button type="button" variant="outline" onClick={onClose} disabled={isCreating}>
