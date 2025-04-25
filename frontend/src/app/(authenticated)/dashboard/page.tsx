@@ -360,7 +360,7 @@ export default function DashboardPage() {
 
                     <Card className={sectionContainerClasses + " p-4 md:p-0"}>
                     <CardHeader className="mb-0 px-4 py-2 bg-green-900 rounded-t-sm"><CardTitle className="text-xl font-semibold text-gray-200 flex items-center !mb-1"><FaNewspaper className="mr-3 text-gray-400" /> News & Updates</CardTitle></CardHeader>
-                        <CardContent className="p-0">{renderNewsContent()}</CardContent>
+                        <CardContent className="!p-6">{renderNewsContent()}</CardContent>
                     </Card>
                 </div>
 
@@ -378,7 +378,7 @@ export default function DashboardPage() {
                             </CardTitle>
                         </CardHeader>
                         {/* ADD PADDING TO CardContent */}
-                        <CardContent className="p-0"> {/* Keep p-0 here if helper div below handles padding */}
+                        <CardContent className="!p-6"> {/* Keep p-0 here if helper div below handles padding */}
                             {isLoadingStandings && <div className="flex items-center justify-center text-gray-400 py-4"><Spinner className="mr-2 h-4 w-4" /> Loading...</div>}
                             {standingsError && <p className="text-center text-red-400 py-4">{standingsError}</p>}
                             {!isLoadingStandings && !standingsError && (
@@ -387,14 +387,14 @@ export default function DashboardPage() {
                                     <Table>
                                         <TableHeader>
                                             {/* Use slightly more padding maybe? */}
-                                            <TableRow><TableHead className="w-[40px] text-center px-2 py-3">Pos</TableHead><TableHead className="w-[30px] text-center px-1 py-3">+/-</TableHead><TableHead className="px-3 py-3">Name</TableHead><TableHead className="text-right w-[60px] px-3 py-3">Pts</TableHead></TableRow>
+                                            <TableRow><TableHead className="w-[40px] text-center px-2 py-3 rounded-tl-lg">Pos</TableHead><TableHead className="w-[30px] text-center px-1 py-3">+/-</TableHead><TableHead className="px-3 py-3">Name</TableHead><TableHead className="text-right w-[60px] px-3 py-3 rounded-tr-lg">Pts</TableHead></TableRow>
                                         </TableHeader>
                                         <TableBody>
                                             {standings.length === 0 ? (<TableRow><TableCell colSpan={4} className="text-center py-6 text-gray-400 italic">No players in standings.</TableCell></TableRow>)
                                                 : (standings.map((entry) => (
                                                     <TableRow key={entry.userId}>
                                                         {/* Use slightly more padding maybe? */}
-                                                        <TableCell className="text-center font-medium px-2 py-2">{entry.rank}</TableCell>
+                                                        <TableCell className="text-center font-medium px-2 py-2 ">{entry.rank}</TableCell>
                                                         <TableCell className="text-center px-1 py-2"><MovementIndicator movement={entry.movement} /></TableCell>
                                                         <TableCell className="px-3 py-2"><div className="flex items-center space-x-2"><Avatar size="xs" name={entry.name} fullAvatarUrl={entry.avatarUrl} /><span className="truncate" title={entry.teamName || entry.name}>{entry.teamName || entry.name}</span></div></TableCell>
                                                         <TableCell className="text-right font-semibold px-3 py-2">{entry.points}</TableCell>
@@ -406,9 +406,7 @@ export default function DashboardPage() {
                             )}
                         </CardContent>
                         {/* Keep Footer Div */}
-                        <div className="pt-3 flex justify-end">
-                            <Link href="/standings" className="text-sm text-accent hover:text-amber-300 hover:underline"> View All Standings </Link>
-                        </div>
+                        
                     </Card>
                 </div> {/* ===== End Right Column ===== */}
             </div> {/* End Main Grid */}

@@ -107,16 +107,16 @@ export default function ProfileStatisticsPage() {
 
 
     return (
-        <div className="space-y-6 p-4 md:p-6">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-100">Your Statistics</h1>
+        <div className="space-y-6 px-1 !md:px-1 !pb-1 !pt-1">
+            <h1 className="text-2xl md:text-1xl font-bold text-gray-100">Season 24/25 Statistics</h1>
 
             {/* KPIs Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Overall Accuracy Card */}
-                 <Card className="dark:bg-gray-800 border border-gray-700 p-4">
-                    <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-2">
+                 <Card className="dark:bg-gray-800 border border-gray-700 p-1">
+                    <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-0">
                         <CardTitle className="text-sm font-medium text-gray-400">Overall Accuracy</CardTitle>
-                        <FaPercentage className="h-4 w-4 text-gray-500" />
+                        <FaPercentage className="h-4 w-4 text-yellow-500" />
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="text-2xl font-bold text-gray-100">
@@ -127,10 +127,10 @@ export default function ProfileStatisticsPage() {
                 </Card>
 
                 {/* Average Points Card */}
-                 <Card className="dark:bg-gray-800 border border-gray-700 p-4">
-                     <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-2">
+                 <Card className="dark:bg-gray-800 border border-gray-700 p-1">
+                     <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-0">
                         <CardTitle className="text-sm font-medium text-gray-400">Avg Points / Round</CardTitle>
-                        <FaCalculator className="h-4 w-4 text-gray-500" />
+                        <FaCalculator className="h-4 w-4 text-yellow-500" />
                     </CardHeader>
                     <CardContent className="p-0">
                         <div className="text-2xl font-bold text-gray-100">
@@ -141,8 +141,8 @@ export default function ProfileStatisticsPage() {
                 </Card>
 
                  {/* Best Round Card */}
-                 <Card className="dark:bg-gray-800 border border-gray-700 p-4">
-                     <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-2">
+                 <Card className="dark:bg-gray-800 border border-gray-700 p-1">
+                     <CardHeader className="p-0 flex flex-row items-center justify-between space-y-0 pb-0">
                         <CardTitle className="text-sm font-medium text-gray-400">Best Round</CardTitle>
                         <FaAward className="h-4 w-4 text-yellow-500" /> {/* Gold color */}
                     </CardHeader>
@@ -172,7 +172,7 @@ export default function ProfileStatisticsPage() {
                     <CardTitle className="flex items-center">
                          <FaChartLine className="mr-2 text-blue-400"/> Points Per Round Trend
                     </CardTitle>
-                     <CardDescription>Your points scored in each completed round you participated in.</CardDescription>
+                     <CardDescription className="text-xs text-gray-500 mt-1">Your points scored in each completed round you participated in.</CardDescription>
                 </CardHeader>
                 <CardContent>
                      {statsData.pointsPerRoundHistory.length > 0 ? (

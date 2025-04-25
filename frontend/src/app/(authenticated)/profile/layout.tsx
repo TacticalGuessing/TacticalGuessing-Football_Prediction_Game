@@ -13,7 +13,7 @@ export default function ProfileLayout({
   children: React.ReactNode;
 }) {
   const sidebarWidth = 'sm:ml-60'; // Match the w-60 in ProfileSidebar
-  const paddingTop = 'pt-16'; // Match the pt-16 in ProfileSidebar (adjust based on Header height)
+  const paddingTop = 'pt-2'; // Match the pt-16 in ProfileSidebar (adjust based on Header height)
 
   return (
     <div className="flex min-h-screen bg-gray-900"> {/* Ensure consistent bg */}
@@ -24,7 +24,7 @@ export default function ProfileLayout({
 
       {/* Main content area for profile pages */}
       {/* Apply margin-left matching sidebar width and padding-top matching header height */}
-      <main className={`flex-1 p-4 ${sidebarWidth} ${paddingTop}`}>
+      <main className={`flex-1 p-1 ${sidebarWidth} ${paddingTop}`}>
         {children} {/* This will be profile/page.tsx or profile/settings/page.tsx */}
       </main>
     </div>

@@ -93,7 +93,7 @@ export default function ProfileSidebar() {
         { href: '/profile/friends', label: 'Friends', icon: FaUserFriends, notify: hasPendingFriendRequests || hasPendingLeagueInvites },
     ];
 
-    const baseLinkClasses = 'flex items-center p-2 rounded-lg text-gray-300 hover:bg-gray-700 group w-full text-left';
+    const baseLinkClasses = 'flex items-center p-2 text-gray-300 hover:bg-gray-700 group w-full text-left';
     const activeLinkClasses = 'bg-gray-600 text-white';
 
     // --- ADD Delete League Handlers ---
@@ -136,7 +136,7 @@ export default function ProfileSidebar() {
                 <div className="h-full px-3 py-4 overflow-y-auto bg-gray-800 border-r border-gray-700 flex flex-col">
 
                     {/* Main Navigation */}
-                    <nav className="mb-4">
+                    <nav className="mb-4 mt-4">
                         <ul className="space-y-1 font-medium">
                             {mainNavItems.map((item) => (
                                 <li key={item.href}>

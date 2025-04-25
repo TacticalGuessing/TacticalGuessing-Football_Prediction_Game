@@ -27,7 +27,7 @@ const CardHeader = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={clsx('flex flex-col space-y-1.5 p-4 md:p-6', className)} // Standard padding
+    className={clsx('flex flex-col space-y-1.5 p-4 md:p-3', className)} // Standard padding
     {...props}
   />
 ));
@@ -76,7 +76,7 @@ const CardContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={clsx('p-4 md:p-6 pt-0', className)} // Padding, remove top padding as header has bottom padding
+    className={clsx('p-4 md:p-3 pt-0', className)} // Padding, remove top padding as header has bottom padding
     {...props}
   />
 ));

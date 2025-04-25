@@ -87,7 +87,7 @@ export default function ResultsPage() {
     };
 
     // Define container style
-    const sectionContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700 p-4 md:p-6";
+    const sectionContainerClasses = "bg-gray-800 rounded-sm shadow border border-gray-700 p-4 md:p-6";
 
     // --- Render Logic ---
     if (isAuthLoading) return <div className="p-6 text-center text-gray-400">Loading...</div>;

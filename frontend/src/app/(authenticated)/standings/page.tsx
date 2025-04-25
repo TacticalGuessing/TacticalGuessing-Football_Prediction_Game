@@ -34,7 +34,7 @@ export default function StandingsPage() {
     const [tableTitle, setTableTitle] = useState('Overall Standings');
 
     // Define consistent styling for the select container if needed
-    const selectContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700 p-4 mb-6";
+    const selectContainerClasses = "bg-gray-800 rounded-sm shadow border border-gray-700 p-4 mb-6";
 
     // --- Fetch Leagues ---
     const fetchLeaguesForDropdown = useCallback(async () => {
@@ -159,8 +159,8 @@ export default function StandingsPage() {
 
 
             {/* Standings Table Section - Wrapped in Card for consistency */}
-            <Card className={selectContainerClasses}>
-                <CardHeader className="p-4 border-b border-gray-700">
+            <Card className="bg-gray-900 rounded-sm shadow border border-gray-900 p-4 mb-6">
+                <CardHeader >
                      <CardTitle className="text-lg">{tableTitle}</CardTitle> {/* Dynamic Title */}
                  </CardHeader>
                  <CardContent className="p-0">
