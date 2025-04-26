@@ -27,6 +27,20 @@ export interface User {
     role: 'PLAYER' | 'ADMIN' | 'VISITOR';
     teamName?: string | null;
     avatarUrl?: string | null; // <<< ADD THIS LINE
+    emailVerified: boolean;
+    createdAt: string; // Consider using Date object if you parse it
+    updatedAt: string;
+    subscriptionTier: string;
+    notifiesNewRound: boolean; // ADDED
+    notifiesDeadlineReminder: boolean; // ADDED
+    notifiesRoundResults: boolean;
+}
+
+// --- Add Type for Update Payload ---
+export interface UpdateNotificationSettingsPayload {
+    notifiesNewRound?: boolean;
+    notifiesDeadlineReminder?: boolean;
+    notifiesRoundResults?: boolean;
 }
 
 
@@ -2295,6 +2309,41 @@ export async function resendVerificationEmail(email: string): Promise<ResendResp
         throw new ApiError(message, statusCode);
     }
 }
+
+/**
+ * Updates the user's notification settings.
+ */
+export const updateUserNotificationSettings = async (
+    settingsData: UpdateNotificationSettingsPayload,
+    token: string
+): Promise<User> => { // Return the full updated User object
+    const response = await fetchWithAuth('/notifications/settings', { // Assuming this endpoint
+        method: 'PUT',
+        // Add headers and stringify the body
+       headers: {
+               'Content-Type': 'application/json',
+           },
+           body: JSON.stringify(settingsData)
+    }, token);
+
+    const updatedUserDataRaw = await response.json();
+    const updatedUserData = toCamelCase<User>(updatedUserDataRaw);
+
+    // --- IMPORTANT: Ensure the API returns the needed fields ---
+    // Verify backend '/users/me/settings' PUT returns notifies fields
+    if (typeof updatedUserData.notifiesNewRound === 'undefined') {
+        console.warn('API did not return notifiesNewRound in update response.');
+    }
+     if (typeof updatedUserData.notifiesDeadlineReminder === 'undefined') {
+        console.warn('API did not return notifiesDeadlineReminder in update response.');
+    }
+     if (typeof updatedUserData.notifiesRoundResults === 'undefined') {
+        console.warn('API did not return notifiesRoundResults in update response.');
+    }
+    // --- End Verification ---
+
+    return updatedUserData;
+};
 
 // Optional: Add function to get sent pending requests if needed
 // export async function getSentRequests(token: string): Promise<SentFriendRequest[]> { ... }

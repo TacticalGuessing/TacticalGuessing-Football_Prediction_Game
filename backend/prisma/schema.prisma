@@ -24,6 +24,9 @@ model User {
   emailVerificationToken String?  @unique @map("email_verification_token") // Token sent via email
   subscriptionTier       String   @default("FREE") @map("subscription_tier") // e.g., "FREE", "PREMIUM"
   // subscriptionExpiresAt DateTime? @map("subscription_expires_at") // Optional for later
+  notifiesNewRound       Boolean  @default(true) @map("notifies_new_round") // For Notification 1
+  notifiesDeadlineReminder Boolean  @default(true) @map("notifies_deadline_reminder") // For Notification 2
+  notifiesRoundResults   Boolean  @default(true) @map("notifies_round_results") // For Notification 3
   // --- END Added Fields ---
   rounds        Round[]   @relation("CreatedBy")
   predictions   Prediction[]

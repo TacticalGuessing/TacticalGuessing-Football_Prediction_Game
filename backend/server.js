@@ -30,6 +30,8 @@ const userRoutes = require('./routes/userRoutes'); // Or './routes/userRoutes'
 const leagueRoutes = require('./routes/leagueRoutes'); // Or './routes/leagueRoutes'
 const leagueInviteRoutes = require('./routes/leagueInviteRoutes');
 
+const notificationRoutes = require('./routes/notificationRoutes');
+
 const app = express();
 // Read port from environment AFTER dotenv has loaded
 const PORT = process.env.PORT || 5001; // Render provides PORT, 5001 is local fallback
@@ -98,6 +100,7 @@ app.use('/api/friends', friendsRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/leagues', leagueRoutes);
 app.use('/api/leagues/invites', leagueInviteRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

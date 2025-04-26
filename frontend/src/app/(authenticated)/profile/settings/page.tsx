@@ -4,7 +4,7 @@
 import React, { useState, useEffect, FormEvent, useRef, ChangeEvent } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { toast } from 'react-hot-toast';
-import { setTeamName, uploadAvatar } from '@/lib/api';
+import { setTeamName, uploadAvatar, updateUserNotificationSettings, UpdateNotificationSettingsPayload, User  } from '@/lib/api';
 //import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/Label';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/Card';
 import Avatar from '@/components/Avatar'; // Assuming your display Avatar component is here
 //import Spinner from '@/components/ui/Spinner';
-import { FaUserEdit, FaImage, FaUpload, FaSave } from 'react-icons/fa'; // Added relevant icons
+import { FaUserEdit, FaImage, FaUpload, FaSave, FaBell } from 'react-icons/fa'; // Added relevant icons
 
 export default function ProfileSettingsPage() {
     // --- Hooks ---
@@ -31,6 +31,14 @@ export default function ProfileSettingsPage() {
     const [isUploadingAvatar, setIsUploadingAvatar] = useState<boolean>(false);
     const [error, setError] = useState<string | null>(null);
 
+    // --- NEW Notification State ---
+    const [notifyNewRound, setNotifyNewRound] = useState(false);
+    const [notifyDeadline, setNotifyDeadline] = useState(false);
+    const [notifyResults, setNotifyResults] = useState(false);
+    const [isSavingSettings, setIsSavingSettings] = useState(false);
+
+    const checkboxClasses = "h-4 w-4 rounded border-gray-500 bg-gray-600 text-accent focus:ring-accent focus:ring-offset-gray-800 disabled:opacity-50";
+
     // --- Role Check Effect ---
     useEffect(() => {
         if (!isAuthLoading && user && user.role === 'VISITOR') {
@@ -40,7 +48,15 @@ export default function ProfileSettingsPage() {
     }, [user, isAuthLoading, router]);
 
     // --- Initialization and Cleanup Effects ---
-    useEffect(() => { if (user) { setTeamNameInput(user.teamName || ''); } }, [user]);
+    useEffect(() => {
+        if (user) {
+            setTeamNameInput(user.teamName || '');
+            // Initialize notification toggles from user context
+            setNotifyNewRound(user.notifiesNewRound ?? true); // Default to true if field doesn't exist yet on user obj
+            setNotifyDeadline(user.notifiesDeadlineReminder ?? true);
+            setNotifyResults(user.notifiesRoundResults ?? true);
+        }
+     }, [user]); // Run only when user context changes
     useEffect(() => { return () => { if (previewUrl) { URL.revokeObjectURL(previewUrl); } }; }, [previewUrl]);
 
     // --- Handlers ---
@@ -90,12 +106,60 @@ export default function ProfileSettingsPage() {
         } finally { setIsUploadingAvatar(false); }
     };
 
+    // --- Handle Notification Settings Save ---
+    const handleSettingsSave = async () => {
+        if (!token || !user || isSavingSettings) return;
+
+        const changedSettings: UpdateNotificationSettingsPayload = {};
+        // Compare current state with initial state from user context
+        if (notifyNewRound !== (user.notifiesNewRound ?? true)) {
+            changedSettings.notifiesNewRound = notifyNewRound;
+        }
+        if (notifyDeadline !== (user.notifiesDeadlineReminder ?? true)) {
+            changedSettings.notifiesDeadlineReminder = notifyDeadline;
+        }
+        if (notifyResults !== (user.notifiesRoundResults ?? true)) {
+            changedSettings.notifiesRoundResults = notifyResults;
+        }
+
+        // Only save if something actually changed
+        if (Object.keys(changedSettings).length === 0) {
+            toast('No notification settings were changed.');
+            return;
+        }
+
+        setIsSavingSettings(true);
+        setError(null);
+        const toastId = toast.loading('Saving notification settings...');
+
+        try {
+            // Ensure the type from lib/api.ts is used if necessary
+            const updatedUser: User = await updateUserNotificationSettings(changedSettings, token);
+            updateUserContext(updatedUser); // Update context with ALL fields returned
+            toast.success('Notification settings saved!', { id: toastId });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : "Failed to save settings.";
+            setError(message); toast.error(`Save failed: ${message}`, { id: toastId });
+            // Revert state on error?
+            // setNotifyNewRound(user.notifiesNewRound ?? true);
+            // setNotifyDeadline(user.notifiesDeadlineReminder ?? true);
+            // setNotifyResults(user.notifiesRoundResults ?? true);
+        } finally {
+            setIsSavingSettings(false);
+        }
+    };
+
     // --- Render Logic ---
     if (isAuthLoading) return <div className="p-6 text-center text-gray-400">Loading profile...</div>;
     if (!user || user.role === 'VISITOR') return <div className="p-6 text-center text-red-400">Access Denied or User Not Found.</div>; // Handle visitor case more gracefully
 
     // Use consistent container style
     const sectionContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700";
+
+    const settingsChanged =
+        (user && notifyNewRound !== (user.notifiesNewRound ?? true)) ||
+        (user && notifyDeadline !== (user.notifiesDeadlineReminder ?? true)) ||
+        (user && notifyResults !== (user.notifiesRoundResults ?? true));
 
     return (
         <div className="space-y-8 p-4 md:p-6 max-w-3xl mx-auto"> {/* Constrain width, add more vertical space */}
@@ -202,7 +266,96 @@ export default function ProfileSettingsPage() {
                 </CardContent>
             </Card>
 
-             {/* --- Display Basic Info (Read Only) --- */}
+             {/* --- Notification Settings Section (Using Checkboxes) --- */}
+            <Card className={sectionContainerClasses}>
+                <CardHeader>
+                    <CardTitle className="flex items-center">
+                        <FaBell className="mr-3 text-gray-400" /> Notification Preferences
+                    </CardTitle>
+                    <CardDescription>Choose which game-related emails you want to receive.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-5"> {/* Increased spacing slightly */}
+
+                    {/* New Round Notification */}
+                    <div className="flex items-start justify-between gap-4"> {/* Use items-start, add gap */}
+                        {/* Wrap Label and Description together */}
+                        <div className="flex-grow">
+                            <Label htmlFor="notifyNewRoundToggle" className="font-medium text-gray-100 cursor-pointer">
+                                New Round Opened
+                            </Label>
+                            <p id="notifyNewRoundDesc" className="text-xs font-normal text-gray-400 mt-0.5">
+                                Get notified when an admin opens a new prediction round.
+                            </p>
+                        </div>
+                         {/* Checkbox */}
+                         <input
+                            type="checkbox"
+                            id="notifyNewRoundToggle"
+                            checked={notifyNewRound}
+                            onChange={(e) => setNotifyNewRound(e.target.checked)}
+                            disabled={isSavingSettings}
+                            className={checkboxClasses} // Apply custom styles
+                            aria-describedby="notifyNewRoundDesc"
+                        />
+                    </div>
+
+                    {/* Deadline Reminder Notification */}
+                    <div className="flex items-start justify-between gap-4">
+                         <div className="flex-grow">
+                            <Label htmlFor="notifyDeadlineToggle" className="font-medium text-gray-100 cursor-pointer">
+                                Prediction Deadline Reminder
+                            </Label>
+                            <p id="notifyDeadlineDesc" className="text-xs font-normal text-gray-400 mt-0.5">
+                                Receive a reminder if you haven&apos;t predicted close to the deadline (approx. 12h before).
+                            </p>
+                        </div>
+                        <input
+                            type="checkbox"
+                            id="notifyDeadlineToggle"
+                            checked={notifyDeadline}
+                            onChange={(e) => setNotifyDeadline(e.target.checked)}
+                            disabled={isSavingSettings}
+                            className={checkboxClasses}
+                            aria-describedby="notifyDeadlineDesc"
+                        />
+                    </div>
+
+                    {/* Round Results Notification */}
+                    <div className="flex items-start justify-between gap-4">
+                         <div className="flex-grow">
+                            <Label htmlFor="notifyResultsToggle" className="font-medium text-gray-100 cursor-pointer">
+                                Round Results & Scoring
+                            </Label>
+                            <p id="notifyResultsDesc" className="text-xs font-normal text-gray-400 mt-0.5">
+                                Get an email with your results when a round has been scored.
+                            </p>
+                        </div>
+                        <input
+                            type="checkbox"
+                            id="notifyResultsToggle"
+                            checked={notifyResults}
+                            onChange={(e) => setNotifyResults(e.target.checked)}
+                            disabled={isSavingSettings}
+                            className={checkboxClasses}
+                            aria-describedby="notifyResultsDesc"
+                        />
+                    </div>
+
+                </CardContent>
+                <CardFooter className="flex justify-end border-t border-gray-700 pt-4"> {/* Added border/padding */}
+                    <Button
+                        type="button"
+                        size="sm"
+                        onClick={handleSettingsSave}
+                        disabled={isSavingSettings || isSavingTeamName || isUploadingAvatar || !settingsChanged}
+                        isLoading={isSavingSettings}
+                    >
+                        <FaSave className="mr-2 h-4 w-4" /> Save Notification Settings
+                    </Button>
+                </CardFooter>
+            </Card>
+
+            {/* Display Basic Info (Read Only) */}
              <Card className={sectionContainerClasses}>
                  <CardHeader>
                      <CardTitle>Account Information</CardTitle>

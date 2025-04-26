@@ -7,6 +7,7 @@ const scoringUtils = require('../src/utils/scoringUtils');
 const router = express.Router();
 const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
+const sendEmail = require('../src/utils/sendEmail');
 const { fetchRoundResults } = require('../src/controllers/adminRoundController');
 
 console.log('[rounds.js] Type of imported scoringUtils:', typeof scoringUtils); // Should log 'object'
@@ -406,30 +407,130 @@ module.exports = router;
 // PUT /api/rounds/:roundId/status - Update round status (e.g., open, close it) (Admin Only)
 router.put('/:roundId/status', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
-    const { status } = req.body; // Expect status: 'SETUP', 'OPEN', 'CLOSED', 'COMPLETED'
+    const { status } = req.body; // Expect status: 'SETUP', 'OPEN', 'CLOSED'
+    console.log(`--- PUT /:roundId/status ---`); // <<< ADD
+    console.log(`Received Round ID: ${roundId}`); // <<< ADD
+    console.log(`Received Status from req.body: '${status}' (Type: ${typeof status})`);
 
     const parsedRoundId = parseInt(roundId, 10);
-     if (isNaN(parsedRoundId)) {
+    if (isNaN(parsedRoundId)) {
         return res.status(400).json({ message: 'Round ID must be an integer.' });
     }
 
-    // Added 'SETUP' to valid statuses, removed 'COMPLETED' as it's set by scoring
-    if (!status || !['SETUP', 'OPEN', 'CLOSED'].includes(status)) {
-        return res.status(400).json({ message: 'Invalid status provided. Use SETUP, OPEN, or CLOSED.' });
+    const validStatuses = ['SETUP', 'OPEN', 'CLOSED'];
+    if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ message: `Invalid status provided. Use ${validStatuses.join(', ')}.` });
     }
 
+    // --- Get current status BEFORE update ---
+    let currentStatus = null;
     try {
-        // Use db.query directly
+        const roundCheck = await db.query('SELECT status FROM rounds WHERE round_id = $1', [parsedRoundId]);
+        if (roundCheck.rows.length === 0) {
+             return res.status(404).json({ message: 'Round not found.' });
+        }
+        currentStatus = roundCheck.rows[0].status;
+         // Prevent re-opening an already open round triggering emails again (optional check)
+         if (currentStatus === 'OPEN' && status === 'OPEN') {
+             console.log(`Round ${parsedRoundId} is already OPEN. Status update skipped.`);
+             // Just return the current state or a specific message
+             const currentRoundData = await db.query('SELECT * FROM rounds WHERE round_id = $1', [parsedRoundId]);
+             return res.status(200).json(currentRoundData.rows[0]);
+         }
+
+    } catch (err) {
+         console.error(`Error fetching current status for round ${parsedRoundId}:`, err);
+         return next(err); // Use return to stop execution
+    }
+    // --- End current status check ---
+
+
+    try {
+        // Update the round status using pg pool
         const result = await db.query(
-            'UPDATE rounds SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE round_id = $2 RETURNING *', // Add updated_at
+            'UPDATE rounds SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE round_id = $2 RETURNING *',
             [status, parsedRoundId]
         );
         if (result.rows.length === 0) {
-            return res.status(404).json({ message: 'Round not found.' });
+            // This check is somewhat redundant due to the check above, but keep for safety
+            return res.status(404).json({ message: 'Round not found during update.' });
         }
-        res.status(200).json(result.rows[0]); // Returns snake_case from DB
+        const updatedRound = result.rows[0]; // Contains snake_case fields
+
+        // --- Trigger Email Notification ONLY if status changed TO 'OPEN' ---
+        if (status === 'OPEN' && currentStatus !== 'OPEN') {
+            console.log(`Round ${parsedRoundId} status changed to OPEN. Triggering notifications...`);
+
+            // Fetch round details and fixtures using Prisma for easier relations/mapping
+            const roundDetails = await prisma.round.findUnique({
+                where: { roundId: parsedRoundId },
+                include: {
+                    fixtures: {
+                        orderBy: { matchTime: 'asc' } // Order fixtures by time
+                    }
+                }
+            });
+
+            if (roundDetails) {
+                // Fetch users who want this notification
+                const usersToNotify = await prisma.user.findMany({
+                    where: {
+                        // emailVerified: true, // Optional: Only notify verified users?
+                        notifiesNewRound: true // Check preference
+                    },
+                    select: { email: true, name: true }
+                });
+
+                console.log(`Found ${usersToNotify.length} users subscribed to new round notifications.`);
+
+                // Construct generic part of email
+                const deadlineFormatted = new Date(roundDetails.deadline).toLocaleString('en-GB', { dateStyle: 'full', timeStyle: 'short' }); // Example format
+                const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'; // Fallback needed
+                const predictionsLink = `${frontendUrl}/predictions`;
+                const fixturesHtml = roundDetails.fixtures.length > 0
+                    ? '<ul>' + roundDetails.fixtures.map(f => `<li>${f.homeTeam} vs ${f.awayTeam} (${new Date(f.matchTime).toLocaleDateString('en-GB', {weekday: 'short', month: 'short', day: 'numeric'})})</li>`).join('') + '</ul>'
+                    : '<p>Fixtures will be added soon.</p>';
+
+                // Send email to each user (consider background job for many users)
+                usersToNotify.forEach(async (user) => {
+                    const emailSubject = `⚽ New Round Open: ${roundDetails.name}!`;
+                    const emailHtml = `
+                        <h1>Round Open: ${roundDetails.name}</h1>
+                        <p>Hello ${user.name || 'Player'},</p>
+                        <p>A new prediction round, <strong>${roundDetails.name}</strong>, is now open!</p>
+                        <p><strong>Deadline:</strong> ${deadlineFormatted}</p>
+                        <p><strong>Jokers Allowed:</strong> ${roundDetails.jokerLimit}</p>
+                        <h2>Fixtures:</h2>
+                        ${fixturesHtml}
+                        <p>Get your predictions in!</p>
+                        <a href="${predictionsLink}" target="_blank" style="background-color: #3B82F6; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; border-radius: 4px;">Make Predictions</a>
+                        <br><br>
+                        <p><small>To change your notification preferences, visit your profile settings.</small></p>
+                    `;
+
+                    try {
+                        // Use await here if sending sequentially, or manage promises if parallel
+                        await sendEmail({
+                            to: user.email,
+                            subject: emailSubject,
+                            html: emailHtml,
+                            // text: optional plain text version
+                        });
+                    } catch (emailError) {
+                        console.error(`Failed to send new round notification to ${user.email} for round ${parsedRoundId}:`, emailError);
+                    }
+                });
+
+            } else {
+                 console.error(`Failed to fetch details for round ${parsedRoundId} after status update. Cannot send notifications.`);
+            }
+        }
+        // --- End Trigger Email ---
+
+        res.status(200).json(updatedRound); // Return updated round (snake_case)
+
     } catch (err) {
-        console.error(`Error updating status for round ${parsedRoundId}:`, err);
+        console.error(`Error updating status or sending notifications for round ${parsedRoundId}:`, err);
         next(err);
     }
 });
@@ -439,33 +540,36 @@ router.put('/:roundId/status', protect, admin, async (req, res, next) => {
 router.post('/:roundId/score', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const parsedRoundId = parseInt(roundId, 10);
-    console.log(`--- [SCORING INLINE TEST] Starting scoring for Round ID: ${parsedRoundId} ---`);
+    console.log(`--- [SCORING] Starting scoring for Round ID: ${parsedRoundId} ---`);
 
     if (isNaN(parsedRoundId)) {
         return res.status(400).json({ message: 'Round ID must be an integer.' });
     }
 
-    // Declare client variable outside try block so it's accessible in finally
-    let client;
+    let client; // Declare client for finally block access
     try {
         client = await db.pool.connect();
-        console.log('[SCORING INLINE TEST] Obtained client:', client ? 'Object obtained' : 'NULL/UNDEFINED');
+        console.log('[SCORING] Obtained client:', client ? 'Object obtained' : 'NULL/UNDEFINED');
 
-        console.log('[SCORING INLINE TEST] Attempting BEGIN...');
+        console.log('[SCORING] Attempting BEGIN...');
         await client.query('BEGIN');
-        console.log('[SCORING INLINE TEST] BEGIN successful.');
+        console.log('[SCORING] BEGIN successful.');
 
         // 1. --- Prerequisite Checks ---
-        const roundResult = await client.query('SELECT status FROM rounds WHERE round_id = $1 FOR UPDATE', [parsedRoundId]);
+        const roundResult = await client.query('SELECT status, name FROM rounds WHERE round_id = $1 FOR UPDATE', [parsedRoundId]);
         if (roundResult.rows.length === 0) {
             await client.query('ROLLBACK');
-            client.release(); // Release client before returning
+            // client.release(); // <<< REMOVED
+            console.log(`[SCORING] Prerequisite failed: Round ${parsedRoundId} not found.`);
             return res.status(404).json({ message: 'Round not found.' });
         }
         const roundStatus = roundResult.rows[0].status;
+        // const roundNameForNotification = roundResult.rows[0].name; // Name fetched later
+
         if (roundStatus !== 'CLOSED') {
             await client.query('ROLLBACK');
-            client.release(); // Release client before returning
+            // client.release(); // <<< REMOVED
+            console.log(`[SCORING] Prerequisite failed: Round ${parsedRoundId} status is '${roundStatus}', not 'CLOSED'.`);
             return res.status(400).json({ message: `Scoring can only be initiated for rounds with status 'CLOSED'. Current status: '${roundStatus}'.` });
         }
 
@@ -473,17 +577,18 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
             'SELECT fixture_id, home_score, away_score FROM fixtures WHERE round_id = $1',
             [parsedRoundId]
         );
-        console.log(`[SCORING INLINE TEST] Fetched ${fixturesResult.rows.length} fixtures for round ${parsedRoundId}.`);
+        console.log(`[SCORING] Fetched ${fixturesResult.rows.length} fixtures for round ${parsedRoundId}.`);
 
         if (fixturesResult.rows.length === 0) {
-             console.log(`[SCORING INLINE TEST] No fixtures found for round ${parsedRoundId}. Marking as COMPLETED immediately.`);
+             console.log(`[SCORING] No fixtures found for round ${parsedRoundId}. Marking as COMPLETED immediately.`);
              // Skip prediction processing
         } else {
             const fixturesWithoutResults = fixturesResult.rows.filter( f => f.home_score === null || f.away_score === null );
             if (fixturesWithoutResults.length > 0) {
                 await client.query('ROLLBACK');
-                client.release(); // Release client before returning
+                // client.release(); // <<< REMOVED
                 const missingIds = fixturesWithoutResults.map(f => f.fixture_id).join(', ');
+                console.log(`[SCORING] Prerequisite failed: Results missing for fixtures: ${missingIds}.`);
                 return res.status(400).json({ message: `Cannot score round. Results missing for fixtures: ${missingIds}. Please enter all results first.` });
             }
 
@@ -500,102 +605,209 @@ router.post('/:roundId/score', protect, admin, async (req, res, next) => {
                 [parsedRoundId]
             );
             const predictions = predictionsResult.rows;
-            console.log(`[SCORING INLINE TEST] Found ${predictions.length} predictions for round ${parsedRoundId}.`);
+            console.log(`[SCORING] Found ${predictions.length} predictions for round ${parsedRoundId}.`);
 
             if (predictions.length === 0) {
-                 console.log(`[SCORING INLINE TEST] No predictions found for round ${parsedRoundId}, but fixtures exist. Proceeding to mark round as COMPLETED.`);
+                 console.log(`[SCORING] No predictions found for round ${parsedRoundId}, but fixtures exist. Proceeding to mark round as COMPLETED.`);
             } else {
-                 console.log(`[SCORING INLINE TEST] Calculating and preparing updates for ${predictions.length} predictions...`);
+                 console.log(`[SCORING] Calculating and preparing updates for ${predictions.length} predictions...`);
 
-                 // --- 3. Calculate and Prepare Updates (INLINE LOGIC) ---
+                 // --- 3. Calculate and Prepare Updates ---
                  const updatePromises = predictions.map(prediction => {
                     const actualResult = actualResultsMap.get(prediction.fixture_id);
-
-                    console.log(`\n[SCORING LOOP INLINE] Processing Prediction ID: ${prediction.prediction_id}, User: ${prediction.user_id}, Fixture: ${prediction.fixture_id}`);
-                    console.log(`  Pred: ${prediction.predicted_home_goals}-${prediction.predicted_away_goals}, Joker: ${prediction.is_joker}`);
-
-                    let points = 0; // Initialize points to 0
-
+                    let points = 0;
                     if (!actualResult) {
-                        console.error(`  [SCORING LOOP INLINE] Critical Error: Actual result not found for fixture ${prediction.fixture_id}. Setting points to 0.`);
-                        points = 0; // Assign 0 points explicitly
+                        console.error(`  [SCORING LOOP] Critical Error: Actual result not found for fixture ${prediction.fixture_id}. Setting points to 0.`);
+                        points = 0;
                     } else {
-                         console.log(`  Fixture Result: ${actualResult.home_score}-${actualResult.away_score}`);
                          try {
-                              // <<< --- REPLACE THE INLINE LOGIC with THIS CALL --- >>>
-                     // Make sure scoringUtils is defined and has the function
-                     if (typeof scoringUtils?.calculatePoints === 'function' && actualResult) {
-                        // Call the function from the imported module
-                        points = scoringUtils.calculatePoints(prediction, actualResult);
-                        // Keep the log to see the result of the call
-                        console.log(`  [SCORING - FROM UTIL] Calculated points: ${points} (Type: ${typeof points})`);
-                   } else {
-                         console.error(`  [SCORING] ERROR: scoringUtils.calculatePoints is not a function or actualResult missing! Type: ${typeof scoringUtils?.calculatePoints}`);
-                         points = 0; // Default if function missing
-                   }
-                   // <<< --- END REPLACEMENT --- >>>
+                              if (typeof scoringUtils?.calculatePoints === 'function') {
+                                  points = scoringUtils.calculatePoints(prediction, actualResult);
+                              } else {
+                                   console.error(`  [SCORING LOOP] ERROR: scoringUtils.calculatePoints is not a function!`);
+                                   points = 0;
+                              }
                          } catch(calcError) {
-                              console.error(`  [SCORING LOOP - INLINE] ERROR calculating points for prediction ${prediction.prediction_id}:`, calcError);
-                              points = 0; // Default to 0 on error
+                              console.error(`  [SCORING LOOP] ERROR calculating points for prediction ${prediction.prediction_id}:`, calcError);
+                              points = 0;
                          }
                     }
-
-                    // Prepare update query...
                     const queryText = 'UPDATE predictions SET points_awarded = $1 WHERE prediction_id = $2';
-                    // Use points calculated inline, default to 0 if it ended up undefined/NaN somehow
                     const finalPointsForUpdate = (typeof points === 'number' && !isNaN(points)) ? points : 0;
                     const queryParams = [finalPointsForUpdate, prediction.prediction_id];
-                    console.log(`  [SCORING LOOP INLINE] Preparing update query with params: ${JSON.stringify(queryParams)}`);
-
                     if (typeof prediction.prediction_id === 'undefined' || prediction.prediction_id === null) {
-                        console.error(`  [SCORING LOOP INLINE] ERROR: prediction_id is null or undefined! Skipping update.`);
-                        return Promise.resolve(); // Skip this update
+                        console.error(`  [SCORING LOOP] ERROR: prediction_id is null or undefined! Skipping update.`);
+                        return Promise.resolve();
                     }
                     return client.query(queryText, queryParams);
-
                  }); // End map
 
                  // --- Execute Updates ---
-                 console.log(`[SCORING INLINE TEST] Attempting to execute ${updatePromises.length} prediction updates...`);
+                 console.log(`[SCORING] Attempting to execute ${updatePromises.length} prediction updates...`);
                  try {
-                      const updateResults = await Promise.all(updatePromises);
-                      console.log(`[SCORING INLINE TEST] Finished prediction updates execution. Results array length: ${updateResults.length}`);
+                      await Promise.all(updatePromises);
+                      console.log(`[SCORING] Finished prediction updates execution.`);
                  } catch (updateError) {
-                      console.error(`[SCORING INLINE TEST] ERROR during Promise.all for prediction updates:`, updateError);
+                      console.error(`[SCORING] ERROR during Promise.all for prediction updates:`, updateError);
                       throw updateError; // Re-throw to trigger rollback
                  }
             } // End else (predictions.length > 0)
         } // End else (fixturesResult.rows.length > 0)
 
         // 4. --- Update Round Status ---
-        console.log(`[SCORING INLINE TEST] Updating round ${parsedRoundId} status to COMPLETED.`);
+        console.log(`[SCORING] Updating round ${parsedRoundId} status to COMPLETED.`);
         await client.query( "UPDATE rounds SET status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP WHERE round_id = $1", [parsedRoundId] );
 
         // 5. --- Commit Transaction ---
         await client.query('COMMIT');
-        console.log(`[SCORING INLINE TEST] Transaction committed for scoring round ${parsedRoundId}.`);
-        res.status(200).json({ message: `Scoring completed successfully for round ${parsedRoundId}. Status updated to COMPLETED.` });
+        console.log(`[SCORING] Transaction committed for scoring round ${parsedRoundId}.`);
+
+        // --- Send Response Immediately ---
+        res.status(200).json({ message: `Scoring completed successfully for round ${parsedRoundId}. Status updated to COMPLETED. Result notifications are being sent.` });
+
+        // --- 6. Trigger Results Notifications Asynchronously ---
+        setImmediate(async () => {
+            console.log(`[RESULTS NOTIFICATION] Starting async notification process for scored round ${parsedRoundId}...`);
+            try {
+                // Re-fetch round details reliably using Prisma AFTER commit
+                const scoredRound = await prisma.round.findUnique({
+                    where: { roundId: parsedRoundId },
+                    select: { name: true } // Just need the name
+                });
+                if (!scoredRound) {
+                    console.error(`[RESULTS NOTIFICATION] Could not re-fetch round ${parsedRoundId} details after commit.`);
+                    return; // Stop if round details are missing
+                }
+                const currentRoundName = scoredRound.name; // Use this name
+
+                // Find users who participated AND opted-in
+                const participatingUserIds = await prisma.prediction.groupBy({
+                    by: ['userId'],
+                    where: { roundId: parsedRoundId },
+                });
+                const userIdList = participatingUserIds.map(p => p.userId);
+
+                if (userIdList.length > 0) {
+                    const usersToNotify = await prisma.user.findMany({
+                        where: {
+                            userId: { in: userIdList }, // Only those who participated
+                            notifiesRoundResults: true // Check preference
+                        },
+                        select: { userId: true, email: true, name: true }
+                    });
+
+                    console.log(`[RESULTS NOTIFICATION] Found ${usersToNotify.length} users to notify for round ${parsedRoundId} - ${currentRoundName}.`);
+                    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000'; // Fallback
+
+                    for (const user of usersToNotify) {
+                        try { // Try-catch for each user's processing/email sending
+                            const userPredictions = await prisma.prediction.findMany({
+                                where: { userId: user.userId, roundId: parsedRoundId },
+                                include: {
+                                    fixture: {
+                                        select: { homeTeam: true, awayTeam: true, homeScore: true, awayScore: true, matchTime: true }
+                                    }
+                                },
+                                orderBy: { fixture: { matchTime: 'asc' } }
+                            });
+
+                            const totalRoundScore = userPredictions.reduce((sum, p) => sum + (p.pointsAwarded ?? 0), 0);
+
+                            // Build HTML table for predictions
+                            let predictionsTableHtml = `
+                                <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+                                <thead>
+                                    <tr>
+                                    <th>Fixture</th>
+                                    <th>Your Prediction</th>
+                                    <th>Actual Result</th>
+                                    <th>Points</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                            `;
+                            userPredictions.forEach(p => {
+                                const actualScore = (p.fixture.homeScore !== null && p.fixture.awayScore !== null)
+                                    ? `${p.fixture.homeScore} - ${p.fixture.awayScore}`
+                                    : 'N/A';
+                                const yourPrediction = (p.predictedHomeGoals !== null && p.predictedAwayGoals !== null)
+                                    ? `${p.predictedHomeGoals} - ${p.predictedAwayGoals}`
+                                    : 'No Prediction';
+                                const points = p.pointsAwarded ?? 0;
+                                const isJokerText = p.isJoker ? ' <strong style="color: #EAB308;">(Joker!)</strong>' : '';
+
+                                predictionsTableHtml += `
+                                    <tr>
+                                    <td>${p.fixture.homeTeam} vs ${p.fixture.awayTeam}</td>
+                                    <td>${yourPrediction}${isJokerText}</td>
+                                    <td>${actualScore}</td>
+                                    <td>${points}</td>
+                                    </tr>
+                                `;
+                            });
+                            predictionsTableHtml += '</tbody></table>';
+
+                            // Construct Email using the correct round name
+                            const resultsLink = `${frontendUrl}/results/${parsedRoundId}`;
+                            const emailSubject = `🏆 Results are in for ${currentRoundName}!`;
+                            const emailHtml = `
+                                <h1>Results for ${currentRoundName}</h1>
+                                <p>Hello ${user.name || 'Player'},</p>
+                                <p>The results for <strong>${currentRoundName}</strong> have been calculated!</p>
+                                <p><strong>Your total score for this round: ${totalRoundScore} points</strong></p>
+                                <h2>Your Predictions:</h2>
+                                ${predictionsTableHtml}
+                                <br>
+                                <p>View the full round standings and details:</p>
+                                <a href="${resultsLink}" target="_blank" style="background-color: #3B82F6; color: white; padding: 10px 20px; text-align: center; text-decoration: none; display: inline-block; border-radius: 4px;">View Round Results</a>
+                                <br><br>
+                                <p><small>To change your notification preferences, visit your profile settings.</small></p>
+                            `;
+
+                            // Send Email
+                            await sendEmail({
+                                to: user.email,
+                                subject: emailSubject,
+                                html: emailHtml,
+                            });
+                            console.log(`[RESULTS NOTIFICATION] Successfully sent results email to ${user.email} for round ${parsedRoundId}.`);
+
+                        } catch (userEmailError) {
+                             // Log error for specific user but continue the loop
+                            console.error(`[RESULTS NOTIFICATION] Failed processing or sending results email to ${user.email} for round ${parsedRoundId}:`, userEmailError);
+                        }
+                    } // end for loop
+                } else {
+                    console.log(`[RESULTS NOTIFICATION] No users participated or opted-in for round ${parsedRoundId}. No notifications sent.`);
+                }
+            } catch (notificationError) {
+                console.error(`[RESULTS NOTIFICATION] Error during background notification process for round ${parsedRoundId}:`, notificationError);
+            }
+        }); // --- End setImmediate wrapper ---
 
     } catch (error) {
-        console.error(`[SCORING INLINE TEST] Transaction Error for round ${parsedRoundId}, attempting rollback:`, error);
+        console.error(`[SCORING] Transaction Error for round ${parsedRoundId}, attempting rollback:`, error);
         try {
+            // Check if client exists and seems usable before rollback
             if (client && typeof client.query === 'function') {
-                console.log('[SCORING INLINE TEST] Attempting ROLLBACK...');
+                console.log('[SCORING] Attempting ROLLBACK...');
                 await client.query('ROLLBACK');
-                console.log('[SCORING INLINE TEST] Rollback successful.');
+                console.log('[SCORING] Rollback successful.');
             } else {
-                console.warn('[SCORING INLINE TEST] Client object invalid or disconnected, skipping ROLLBACK.');
+                console.warn('[SCORING] Client object invalid or disconnected, skipping ROLLBACK.');
             }
         } catch (rbError) {
-            console.error('[SCORING INLINE TEST] Rollback failed:', rbError);
+            console.error('[SCORING] Rollback failed:', rbError);
         }
+        // Pass the original error to the next error handler
         next(error);
     } finally {
+        // Release client *only once* if it was successfully obtained
         if (client) {
             client.release();
-            console.log(`[SCORING INLINE TEST] Database client released for round ${parsedRoundId} scoring.`);
+            console.log(`[SCORING] Database client released for round ${parsedRoundId} scoring.`);
         } else {
-             console.log(`[SCORING INLINE TEST] Client was not available for release for round ${parsedRoundId} scoring.`);
+             console.log(`[SCORING] Client was not available for release for round ${parsedRoundId} scoring.`);
         }
     }
 }); // End router.post('/:roundId/score', ...)
