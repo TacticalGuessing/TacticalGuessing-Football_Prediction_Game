@@ -44,9 +44,9 @@ const poolConfig = {
 const logTarget = process.env.DATABASE_URL
     ? process.env.DATABASE_URL.replace(/:([^:@\/]+)@/, ':<password>@') // Mask password
     : `${poolConfig.host || 'localhost'}:${poolConfig.port || 5432}/${poolConfig.database || 'default_db'}`; // Fallback for logging
-console.log(`[db.js] Attempting to connect pool to: ${logTarget}`);
+//console.log(`[db.js] Attempting to connect pool to: ${logTarget}`);
 // Log the SSL configuration being used AFTER determining if it's cloud/local
-console.log(`[db.js] SSL Configuration determined:`, poolConfig.ssl);
+//console.log(`[db.js] SSL Configuration determined:`, poolConfig.ssl);
 
 // Create the pool instance with the configured options
 const pool = new Pool(poolConfig);
@@ -54,7 +54,7 @@ const pool = new Pool(poolConfig);
 // Event listener for successful client connection within the pool
 pool.on('connect', (client) => {
     const params = client.connectionParameters;
-    console.log(`[db.js] Pool client connected to ${params.host}:${params.port}/${params.database}. SSL Active: ${client.ssl ? 'Yes' : 'No'}`); // Log SSL status
+    //console.log(`[db.js] Pool client connected to ${params.host}:${params.port}/${params.database}. SSL Active: ${client.ssl ? 'Yes' : 'No'}`); // Log SSL status
     // client.on('error', err => console.error('[db.js] Error on connected client:', err));
 });
 

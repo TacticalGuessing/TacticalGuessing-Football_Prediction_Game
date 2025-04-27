@@ -61,7 +61,7 @@ router.post('/profile/team-name', async (req, res, next) => {
     const userId = req.user.userId;
     const { teamName } = req.body; // Expecting { teamName: "New Team Name" }
 
-    console.log(`[${new Date().toISOString()}] User ${userId} attempting to set team name to: "${teamName}"`);
+    //console.log(`[${new Date().toISOString()}] User ${userId} attempting to set team name to: "${teamName}"`);
 
     // Validation
     if (typeof teamName !== 'string') {
@@ -75,7 +75,7 @@ router.post('/profile/team-name', async (req, res, next) => {
          // if (trimmedTeamName.length === 0 || trimmedTeamName.length > 50) { // Example length limit
          //    return res.status(400).json({ message: 'Team name must be between 1 and 50 characters.' });
          // }
-         console.log(`[${new Date().toISOString()}] User ${userId} setting team name to empty.`);
+         //console.log(`[${new Date().toISOString()}] User ${userId} setting team name to empty.`);
     } else if (trimmedTeamName.length > 50) { // Example max length
          return res.status(400).json({ message: 'Team name cannot exceed 50 characters.' });
     }
@@ -97,7 +97,7 @@ router.post('/profile/team-name', async (req, res, next) => {
             }
         });
 
-        console.log(`[${new Date().toISOString()}] User ${userId} successfully updated team name.`);
+        //console.log(`[${new Date().toISOString()}] User ${userId} successfully updated team name.`);
         res.status(200).json(updatedUser); // Return updated user info (camelCase)
 
     } catch (error) {
@@ -144,7 +144,7 @@ router.post(
         const userId = req.user.userId;
 
         try {
-            console.log(`[Avatar Upload] User ${userId}: Uploading image to Cloudinary...`);
+            //console.log(`[Avatar Upload] User ${userId}: Uploading image to Cloudinary...`);
             // --- Cloudinary Upload ---
             const cloudinaryResult = await uploadToCloudinary(req.file.buffer);
 
@@ -154,7 +154,7 @@ router.post(
             }
 
             const newAvatarUrl = cloudinaryResult.secure_url; // Get the HTTPS URL
-            console.log(`[Avatar Upload] User ${userId}: Cloudinary upload successful. URL: ${newAvatarUrl}`);
+            //console.log(`[Avatar Upload] User ${userId}: Cloudinary upload successful. URL: ${newAvatarUrl}`);
             // --- End Cloudinary Upload ---
 
             // --- Remove Old File Deletion Logic ---
@@ -175,7 +175,7 @@ router.post(
                     // Include roles or other fields if needed by the frontend context
                 },
             });
-            console.log(`[Avatar Upload] User ${userId}: Database updated successfully.`);
+            //console.log(`[Avatar Upload] User ${userId}: Database updated successfully.`);
             // --- End Update Database ---
 
             // --- Send Response ---

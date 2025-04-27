@@ -30,7 +30,7 @@ router.post('/dev/reset-game-data', asyncHandler(handleResetGameData)); // Added
 
 // Example Test Route
 router.get('/test', (req, res) => {
-    console.log(`[${new Date().toISOString()}] Admin Test Route accessed by User ID: ${req.user.userId}`);
+    //console.log(`[${new Date().toISOString()}] Admin Test Route accessed by User ID: ${req.user.userId}`);
     res.status(200).json({ message: 'Admin route test successful', adminUser: req.user.name });
 });
 
@@ -43,7 +43,7 @@ router.get('/rounds/:roundId/prediction-status', asyncHandler(adminRoundControll
  * @access  Private (Admin Only - already applied via router.use)
  */
 router.get('/users', async (req, res, next) => {
-    console.log(`[${new Date().toISOString()}] Admin request GET /users by User ID: ${req.user.userId}`);
+    //console.log(`[${new Date().toISOString()}] Admin request GET /users by User ID: ${req.user.userId}`);
     try {
         const users = await prisma.user.findMany({
             select: {
@@ -77,7 +77,7 @@ router.get('/users/:userId/predictions/:roundId', async (req, res, next) => {
     const requestingAdminId = req.user.userId;
     const { userId: targetUserIdParam, roundId: roundIdParam } = req.params;
 
-    console.log(`[${new Date().toISOString()}] Admin ${requestingAdminId} requesting predictions for User ${targetUserIdParam}, Round ${roundIdParam}`);
+    //console.log(`[${new Date().toISOString()}] Admin ${requestingAdminId} requesting predictions for User ${targetUserIdParam}, Round ${roundIdParam}`);
 
     // Validate parameters
     const targetUserId = parseInt(targetUserIdParam, 10);
@@ -97,7 +97,7 @@ router.get('/users/:userId/predictions/:roundId', async (req, res, next) => {
             select: { userId: true } // Only need to check existence
         });
         if (!targetUser) {
-            console.log(`[${new Date().toISOString()}] Target user ${targetUserId} not found.`);
+            //console.log(`[${new Date().toISOString()}] Target user ${targetUserId} not found.`);
             return res.status(404).json({ message: `User with ID ${targetUserId} not found.` });
         }
 
@@ -107,16 +107,16 @@ router.get('/users/:userId/predictions/:roundId', async (req, res, next) => {
             select: { status: true }
         });
         if (!round) {
-            console.log(`[${new Date().toISOString()}] Target round ${roundId} not found.`);
+            //console.log(`[${new Date().toISOString()}] Target round ${roundId} not found.`);
             return res.status(404).json({ message: `Round with ID ${roundId} not found.` });
         }
         if (round.status !== 'COMPLETED') {
-             console.log(`[${new Date().toISOString()}] Target round ${roundId} is not COMPLETED (Status: ${round.status}).`);
+             //console.log(`[${new Date().toISOString()}] Target round ${roundId} is not COMPLETED (Status: ${round.status}).`);
             return res.status(400).json({ message: `Round ${roundId} is not completed. Audit is only available for completed rounds.` });
         }
 
         // 3. Fetch the predictions with included fixture details
-        console.log(`[${new Date().toISOString()}] Fetching predictions for User ${targetUserId}, Round ${roundId}...`);
+        //console.log(`[${new Date().toISOString()}] Fetching predictions for User ${targetUserId}, Round ${roundId}...`);
         const predictions = await prisma.prediction.findMany({
             where: {
                 userId: targetUserId, // Use model field name
@@ -144,7 +144,7 @@ router.get('/users/:userId/predictions/:roundId', async (req, res, next) => {
                 }
             }
         });
-        console.log(`[${new Date().toISOString()}] Found ${predictions.length} predictions.`);
+        //console.log(`[${new Date().toISOString()}] Found ${predictions.length} predictions.`);
 
         // Data is returned by Prisma using model field names (camelCase)
         res.status(200).json(predictions);
@@ -217,7 +217,7 @@ router.patch('/users/:userId/role', protect, asyncHandler(async (req, res) => {
                 avatarUrl: true
             }
         });
-        console.log(`Admin ${req.user.userId} updated role for user ${userIdToUpdate} to ${newRole.toUpperCase()}`);
+        //console.log(`Admin ${req.user.userId} updated role for user ${userIdToUpdate} to ${newRole.toUpperCase()}`);
         res.status(200).json(updatedUser);
 
     } catch (error) {
@@ -281,7 +281,7 @@ router.delete('/users/:userId', asyncHandler(async (req, res) => {
             where: { userId: userIdToDelete },
         });
 
-        console.log(`Admin ${req.user.userId} deleted user ${userIdToDelete}`);
+        //console.log(`Admin ${req.user.userId} deleted user ${userIdToDelete}`);
         res.status(200).json({ message: `User ID ${userIdToDelete} deleted successfully.` });
 
     } catch (error) {

@@ -77,7 +77,7 @@ export default function AdminRoundsPage() {
         // setIsLoading(true);
         try {
             const fetchedRounds = await getRounds(token);
-            console.log("[AdminPage fetchRounds] Fetched rounds data:", fetchedRounds);
+            //console.log("[AdminPage fetchRounds] Fetched rounds data:", fetchedRounds);
             setRounds(fetchedRounds.sort((a, b) => b.roundId - a.roundId));
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : 'Failed to fetch rounds');
@@ -89,21 +89,48 @@ export default function AdminRoundsPage() {
     }, [token, isLoading]); // Dependency on isLoading ensures initial fetch works
 
     // Effect to handle initial load & auth check
+    // Effect to handle initial load & auth check
     useEffect(() => {
-        if (!isAuthLoading && (!user || user.role !== 'ADMIN')) {
-            router.replace('/dashboard');
-            return;
+        //console.log(`[AdminPage Effect] Running. isAuthLoading: ${isAuthLoading}, user: ${user ? user.email : 'null'}, isLoading: ${isLoading}`);
+
+        // --- Primary Action: Only run logic AFTER initial auth loading is complete ---
+        if (!isAuthLoading) {
+
+            // Case 1: User is logged out (or never logged in)
+            if (!user) {
+                //console.log("[AdminPage Effect] Condition: No user. Should NOT redirect from here. Clearing rounds.");
+                setRounds([]); // Clear data if user logged out while on page
+                // No redirect should happen here; let AuthContext logout handle it.
+                return; // Explicitly stop processing this effect run
+            }
+
+            // Case 2: User is logged in, but NOT an ADMIN
+            if (user && user.role !== 'ADMIN') {
+                console.warn("[AdminPage Effect] Condition: User exists but NOT Admin. Redirecting to /dashboard.");
+                router.replace('/dashboard');
+                return; // Stop processing
+            }
+
+            // Case 3: User IS an ADMIN
+            if (user && user.role === 'ADMIN') {
+                // Fetch data only if it's the initial page load (indicated by `isLoading` state)
+                if (isLoading) {
+                    //console.log("[AdminPage Effect] Condition: Admin user detected, initial fetch needed.");
+                    fetchRounds();
+                } else {
+                    //console.log("[AdminPage Effect] Condition: Admin user detected, but not initial fetch (isLoading is false). No fetch needed here.");
+                }
+                return; // Stop processing
+            }
+
+            // Fallback case (shouldn't be reached with above logic)
+            console.warn("[AdminPage Effect] Reached unexpected state.");
+
+        } else {
+            //console.log("[AdminPage Effect] Skipping checks, initial auth loading is still true.");
         }
-        // Fetch rounds ONLY on initial load or if token changes
-        if (token && isLoading) {
-            fetchRounds();
-        } else if (!isAuthLoading && !token) {
-            setError("Authentication required.");
-            setIsLoading(false);
-        }
-        // NOTE: Removed fetchRounds from dependencies to prevent re-fetching on every render
-        // It's now called explicitly on initial load and via the onRoundCreated callback.
-    }, [token, user, isAuthLoading, router, isLoading, fetchRounds]); // Removed fetchRounds from here
+        // Original dependencies are likely correct, ensuring it re-runs on relevant state changes
+    }, [user, isAuthLoading, router, fetchRounds, isLoading]);
 
     // Helper to set loading state
 
@@ -236,7 +263,7 @@ export default function AdminRoundsPage() {
             {/* Page Title - Moved up, standard margin bottom */}
             <h1 className="text-2xl md:text-3xl font-bold text-gray-100 mb-6 flex items-center"> {/* Added flex */}
                 <FaUserCog className="mr-3 text-gray-400" /> {/* Added icon */}
-                Admin Dashboard
+                Admin Dashboard Penis
             </h1>
 
             {/* Global Error Display (if any) */}

@@ -81,7 +81,7 @@ function getResultString(home, away) { // Removed ': number | null' etc.
 
 // --- Refactored calculateStandings Function ---
 async function calculateStandings(roundId = null, filterUserIds = null) {
-    console.log(`Calculating standings (Utils): ${roundId !== null ? `for round ${roundId}` : 'overall'}... ${filterUserIds ? `Filtering for ${filterUserIds.length} users.` : ''}`);
+    //console.log(`Calculating standings (Utils): ${roundId !== null ? `for round ${roundId}` : 'overall'}... ${filterUserIds ? `Filtering for ${filterUserIds.length} users.` : ''}`);
     try {
         // --- Prepare Base Where Clause ---
         // FIX 1: Remove ': any'

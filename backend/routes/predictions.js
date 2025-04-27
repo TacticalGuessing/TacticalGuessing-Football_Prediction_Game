@@ -10,7 +10,7 @@ const router = express.Router();
 
 // --- Test Route (Keep for verification) ---
 router.get('/test', (req, res) => {
-  console.log(`[${new Date().toISOString()}] GET /test hit!`);
+  //console.log(`[${new Date().toISOString()}] GET /test hit!`);
   res.status(200).send('Predictions test route OK');
 });
 
@@ -33,20 +33,20 @@ router.post('/random', protect, async (req, res, next) => {
     }
     // *** END ROLE CHECK ***
 
-    console.log(`[${new Date().toISOString()}] User ${userId} calling /random`);
+    //console.log(`[${new Date().toISOString()}] User ${userId} calling /random`);
 
     try {
         // Find active round including fixtures
-        console.log(`[${new Date().toISOString()}] Finding active round for /random...`);
+        //console.log(`[${new Date().toISOString()}] Finding active round for /random...`);
         const activeRound = await prisma.round.findFirst({
             where: { status: 'OPEN' },
             include: { fixtures: true }, // Include all fixture data
             orderBy: { deadline: 'asc' },
         });
-        console.log(`[${new Date().toISOString()}] Active round query completed for /random.`);
+        //console.log(`[${new Date().toISOString()}] Active round query completed for /random.`);
 
         if (!activeRound) {
-            console.log(`[${new Date().toISOString()}] No active round found for /random.`);
+            //console.log(`[${new Date().toISOString()}] No active round found for /random.`);
             return res.status(400).json({ message: 'No active round found for generating predictions.' });
         }
 
@@ -54,14 +54,14 @@ router.post('/random', protect, async (req, res, next) => {
         const roundId = activeRound.roundId;
         const deadline = activeRound.deadline;
         const fixtures = activeRound.fixtures;
-        console.log(`[${new Date().toISOString()}] Found active round ${roundId} for /random.`);
+        //console.log(`[${new Date().toISOString()}] Found active round ${roundId} for /random.`);
 
         if (!fixtures || fixtures.length === 0) {
-            console.log(`[${new Date().toISOString()}] No fixtures found in active round ${roundId} for /random.`);
+            //console.log(`[${new Date().toISOString()}] No fixtures found in active round ${roundId} for /random.`);
             return res.status(400).json({ message: 'No fixtures found in the active round to predict.' });
         }
         const fixtureIds = fixtures.map(f => f.fixtureId); // Use camelCase fixtureId
-        console.log(`[${new Date().toISOString()}] Fixture IDs for /random: ${fixtureIds.join(', ')}`);
+        //console.log(`[${new Date().toISOString()}] Fixture IDs for /random: ${fixtureIds.join(', ')}`);
 
         // Validate roundId
         if (typeof roundId !== 'number' || roundId <= 0) {
@@ -72,13 +72,13 @@ router.post('/random', protect, async (req, res, next) => {
         // Check deadline
         const now = new Date();
         if (!deadline || now > new Date(deadline)) {
-            console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in /random.`);
+            //console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in /random.`);
             return res.status(400).json({ message: 'Prediction deadline has passed or is invalid.' });
         }
 
         // Prepare upsert operations
         const maxRandomScore = 4;
-        console.log(`[${new Date().toISOString()}] Preparing ${fixtureIds.length} upsert operations for /random.`);
+        //console.log(`[${new Date().toISOString()}] Preparing ${fixtureIds.length} upsert operations for /random.`);
         const upsertOperations = fixtureIds.map(fixtureId => {
             const randomHomeGoals = Math.floor(Math.random() * (maxRandomScore + 1));
             const randomAwayGoals = Math.floor(Math.random() * (maxRandomScore + 1));
@@ -112,11 +112,11 @@ router.post('/random', protect, async (req, res, next) => {
         });
 
         // Execute transaction
-        console.log(`[${new Date().toISOString()}] Executing transaction for /random...`);
+        //console.log(`[${new Date().toISOString()}] Executing transaction for /random...`);
         const result = await prisma.$transaction(upsertOperations);
-        console.log(`[${new Date().toISOString()}] Transaction completed for /random. Result count: ${result.length}`);
+        //console.log(`[${new Date().toISOString()}] Transaction completed for /random. Result count: ${result.length}`);
 
-        console.log(`[${new Date().toISOString()}] User ${userId} generated random predictions for ${result.length} fixtures in round ${roundId}.`);
+        //console.log(`[${new Date().toISOString()}] User ${userId} generated random predictions for ${result.length} fixtures in round ${roundId}.`);
         res.status(200).json({ message: 'Random predictions generated successfully.', count: result.length });
 
     } catch (error) {
@@ -136,7 +136,7 @@ router.post('/', protect, async (req, res, next) => {
     const { predictions } = req.body;
     const userId = req.user?.userId;
 
-    console.log(`[${new Date().toISOString()}] User ${userId} calling POST /predictions with ${predictions?.length ?? 0} predictions.`);
+    //console.log(`[${new Date().toISOString()}] User ${userId} calling POST /predictions with ${predictions?.length ?? 0} predictions.`);
 
     // Basic validation
     if (!userId) { return res.status(401).json({ message: 'Authentication error: User ID missing.' }); }
@@ -172,13 +172,13 @@ router.post('/', protect, async (req, res, next) => {
 
     try {
         // Find active round
-        console.log(`[${new Date().toISOString()}] Finding active round for POST /predictions...`);
+        //console.log(`[${new Date().toISOString()}] Finding active round for POST /predictions...`);
         const activeRound = await prisma.round.findFirst({
             where: { status: 'OPEN' },
             select: { roundId: true, deadline: true, jokerLimit: true },
             orderBy: { deadline: 'asc' },
         });
-        console.log(`[${new Date().toISOString()}] Active round query completed for POST /predictions.`);
+        //console.log(`[${new Date().toISOString()}] Active round query completed for POST /predictions.`);
 
         if (!activeRound) {
             console.log(`[${new Date().toISOString()}] No active round found for POST /predictions.`);
@@ -187,7 +187,7 @@ router.post('/', protect, async (req, res, next) => {
         const roundId = activeRound.roundId;
         const deadline = activeRound.deadline;
         const roundJokerLimit = activeRound.jokerLimit;
-        console.log(`[${new Date().toISOString()}] Found active round ${roundId} for POST /predictions.`);
+        //console.log(`[${new Date().toISOString()}] Found active round ${roundId} for POST /predictions.`);
 
         // Validate roundId
         if (typeof roundId !== 'number' || roundId <= 0) {
@@ -198,7 +198,7 @@ router.post('/', protect, async (req, res, next) => {
         // Check deadline
         const now = new Date();
         if (!deadline || now > new Date(deadline)) {
-            console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in POST /predictions.`);
+            //console.log(`[${new Date().toISOString()}] Deadline passed or missing for round ${roundId} in POST /predictions.`);
             return res.status(400).json({ message: 'Prediction deadline has passed or is invalid.' });
         }
 
@@ -210,7 +210,7 @@ router.post('/', protect, async (req, res, next) => {
         }
 
         // Prepare upsert operations
-        console.log(`[${new Date().toISOString()}] Preparing ${predictions.length} upsert operations for POST /predictions.`);
+        //console.log(`[${new Date().toISOString()}] Preparing ${predictions.length} upsert operations for POST /predictions.`);
         const upsertOperations = predictions.map(prediction => {
             const homeGoals = prediction.predictedHomeGoals === null ? null : Number(prediction.predictedHomeGoals);
             const awayGoals = prediction.predictedAwayGoals === null ? null : Number(prediction.predictedAwayGoals);
@@ -245,12 +245,12 @@ router.post('/', protect, async (req, res, next) => {
         });
 
         // Execute transaction
-        console.log(`[${new Date().toISOString()}] Executing transaction for POST /predictions...`);
+        //console.log(`[${new Date().toISOString()}] Executing transaction for POST /predictions...`);
         const result = await prisma.$transaction(upsertOperations);
-        console.log(`[${new Date().toISOString()}] Transaction completed for POST /predictions. Result count: ${result.length}`);
+        //console.log(`[${new Date().toISOString()}] Transaction completed for POST /predictions. Result count: ${result.length}`);
 
         const message = result.length > 0 ? 'Predictions submitted successfully.' : 'No prediction data needed updating.';
-        console.log(`[${new Date().toISOString()}] User ${userId} successful POST /predictions for round ${roundId}.`);
+        //console.log(`[${new Date().toISOString()}] User ${userId} successful POST /predictions for round ${roundId}.`);
         res.status(200).json({ message: message, count: result.length });
 
     } catch (error) {

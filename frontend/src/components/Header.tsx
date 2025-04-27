@@ -21,6 +21,7 @@ export default function Header() {
     
 
     const handleLogout = () => {
+        console.log("--- Header.tsx: handleLogout called. Attempting context logout... ---");
         logout();
         // Redirect is handled within logout function in AuthContext
     };

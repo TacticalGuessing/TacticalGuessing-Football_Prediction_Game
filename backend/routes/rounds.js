@@ -10,21 +10,21 @@ const prisma = new PrismaClient();
 const sendEmail = require('../src/utils/sendEmail');
 const { fetchRoundResults } = require('../src/controllers/adminRoundController');
 
-console.log('[rounds.js] Type of imported scoringUtils:', typeof scoringUtils); // Should log 'object'
-console.log('[rounds.js] Type of scoringUtils.calculatePoints:', typeof scoringUtils.calculatePoints); // Should log 'function
+//console.log('[rounds.js] Type of imported scoringUtils:', typeof scoringUtils); // Should log 'object'
+//console.log('[rounds.js] Type of scoringUtils.calculatePoints:', typeof scoringUtils.calculatePoints); // Should log 'function
 
 // --- TEMPORARY TEST ---
 try {
-    console.log('--- Running TEMPORARY calculatePoints test ---');
+    //console.log('--- Running TEMPORARY calculatePoints test ---');
     const testPrediction = { predicted_home_goals: 1, predicted_away_goals: 0, is_joker: true };
     const testResult = { home_score: 1, away_score: 0 };
     if (typeof scoringUtils.calculatePoints === 'function') {
         const testPoints = scoringUtils.calculatePoints(testPrediction, testResult);
-        console.log('[TEMP TEST] Result:', testPoints, '(Type:', typeof testPoints, ')');
+        //console.log('[TEMP TEST] Result:', testPoints, '(Type:', typeof testPoints, ')');
     } else {
         console.error('[TEMP TEST] scoringUtils.calculatePoints is NOT a function!');
     }
-    console.log('--- END TEMPORARY calculatePoints test ---');
+    //console.log('--- END TEMPORARY calculatePoints test ---');
 } catch (e) {
     console.error("Error during temporary test:", e);
 }
@@ -87,12 +87,12 @@ router.post('/', protect, admin, async (req, res, next) => {
 // POST /api/rounds/import/fixtures - Import fixtures from football-data.org (Admin only)
 router.post('/import/fixtures', protect, admin, async (req, res, next) => {
     // Log incoming request body and types
-    console.log('--- Received /import/fixtures request ---');
-    console.log('Request Body:', req.body);
-    console.log('Type of roundId:', typeof req.body.roundId);
-    console.log('Type of competitionCode:', typeof req.body.competitionCode);
-    console.log('Type of matchday:', typeof req.body.matchday);
-    console.log('-------------------------------------------');
+    //console.log('--- Received /import/fixtures request ---');
+    //console.log('Request Body:', req.body);
+    //console.log('Type of roundId:', typeof req.body.roundId);
+    //console.log('Type of competitionCode:', typeof req.body.competitionCode);
+    //console.log('Type of matchday:', typeof req.body.matchday);
+    //console.log('-------------------------------------------');
 
     // Expecting camelCase from frontend
     const { roundId, competitionCode, matchday } = req.body;
@@ -367,7 +367,7 @@ router.get('/active', protect, async (req, res, next) => {
  * @access  Protected (Any logged-in user)
  */
 router.get('/latest-completed', protect, async (req, res, next) => {
-    console.log(`[${new Date().toISOString()}] User ${req.user.userId} requesting latest completed round.`);
+    //console.log(`[${new Date().toISOString()}] User ${req.user.userId} requesting latest completed round.`);
     try {
         const latestCompleted = await prisma.round.findFirst({
             where: { status: 'COMPLETED' },
@@ -379,12 +379,12 @@ router.get('/latest-completed', protect, async (req, res, next) => {
         });
 
         if (!latestCompleted) {
-            console.log(`[${new Date().toISOString()}] No completed rounds found.`);
+            //console.log(`[${new Date().toISOString()}] No completed rounds found.`);
             // Send 204 No Content instead of 404, as it's not an error, just no data yet
             return res.status(204).send();
         }
 
-        console.log(`[${new Date().toISOString()}] Found latest completed round: ID ${latestCompleted.roundId}`);
+        //console.log(`[${new Date().toISOString()}] Found latest completed round: ID ${latestCompleted.roundId}`);
         res.status(200).json(latestCompleted); // Returns { roundId, name }
 
     } catch (error) {
@@ -408,9 +408,9 @@ module.exports = router;
 router.put('/:roundId/status', protect, admin, async (req, res, next) => {
     const { roundId } = req.params;
     const { status } = req.body; // Expect status: 'SETUP', 'OPEN', 'CLOSED'
-    console.log(`--- PUT /:roundId/status ---`); // <<< ADD
-    console.log(`Received Round ID: ${roundId}`); // <<< ADD
-    console.log(`Received Status from req.body: '${status}' (Type: ${typeof status})`);
+    //console.log(`--- PUT /:roundId/status ---`); // <<< ADD
+    //console.log(`Received Round ID: ${roundId}`); // <<< ADD
+    //console.log(`Received Status from req.body: '${status}' (Type: ${typeof status})`);
 
     const parsedRoundId = parseInt(roundId, 10);
     if (isNaN(parsedRoundId)) {
@@ -1325,7 +1325,7 @@ router.get('/:roundId/summary', protect, async (req, res, next) => {
     const { roundId: roundIdParam } = req.params;
     const requestingUserId = req.user.userId; // For logging
 
-    console.log(`[${new Date().toISOString()}] User ${requestingUserId} requesting summary for Round ${roundIdParam}`);
+    //console.log(`[${new Date().toISOString()}] User ${requestingUserId} requesting summary for Round ${roundIdParam}`);
 
     const roundId = parseInt(roundIdParam, 10);
     if (isNaN(roundId) || roundId <= 0) {
@@ -1340,15 +1340,15 @@ router.get('/:roundId/summary', protect, async (req, res, next) => {
         });
 
         if (!round) {
-             console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not found.`);
+             //console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not found.`);
             return res.status(404).json({ message: 'Round not found.' });
         }
         if (round.status !== 'COMPLETED') {
-             console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not COMPLETED (Status: ${round.status}).`);
+             //console.log(`[${new Date().toISOString()}] Summary request failed: Round ${roundId} not COMPLETED (Status: ${round.status}).`);
             return res.status(400).json({ message: `Summary is only available for COMPLETED rounds. This round status is: ${round.status}` });
         }
 
-        console.log(`[${new Date().toISOString()}] Fetching summary data for Round ${roundId}...`);
+        //console.log(`[${new Date().toISOString()}] Fetching summary data for Round ${roundId}...`);
 
         // 2. Fetch data in parallel using Prisma transaction
         // NOTE: Order matters for accessing results below
@@ -1398,7 +1398,7 @@ router.get('/:roundId/summary', protect, async (req, res, next) => {
         ]);
 
         // Post-process the data
-        console.log(`[${new Date().toISOString()}] Raw summary data fetched for Round ${roundId}. Processing...`);
+        //console.log(`[${new Date().toISOString()}] Raw summary data fetched for Round ${roundId}. Processing...`);
 
         // --- Calculate Round Stats from allRoundPredictions (Index 3) ---
         let exactScoresCount = 0;
@@ -1425,22 +1425,22 @@ router.get('/:roundId/summary', protect, async (req, res, next) => {
         let userMap = new Map();
         if (userIdsToFetch.size > 0) {
              const userIdsArray = Array.from(userIdsToFetch);
-             console.log(`[${new Date().toISOString()}] Fetching names for user IDs: ${userIdsArray}`);
+             //console.log(`[${new Date().toISOString()}] Fetching names for user IDs: ${userIdsArray}`);
             const users = await prisma.user.findMany({
                 where: { userId: { in: userIdsArray } },
                 select: { userId: true, name: true }
             });
             users.forEach(user => userMap.set(user.userId, user.name));
-             console.log(`[${new Date().toISOString()}] User names fetched.`);
+             //console.log(`[${new Date().toISOString()}] User names fetched.`);
         }
 
         // --- DEBUG LOGS (Keep temporarily) ---
-         console.log("--- DEBUG: Raw Data Before Mapping ---");
-         console.log("Raw topScorersThisRoundData (Idx 0):", JSON.stringify(rawTopScorers, null, 2));
-         console.log("Raw overallLeadersData (Idx 1):", JSON.stringify(rawOverallLeaders, null, 2));
-         console.log("Raw topJokerPlayersData (Idx 2):", JSON.stringify(rawTopJokers, null, 2));
-         console.log("User Map:", userMap);
-         console.log("--------------------------------------");
+        // console.log("--- DEBUG: Raw Data Before Mapping ---");
+         //console.log("Raw topScorersThisRoundData (Idx 0):", JSON.stringify(rawTopScorers, null, 2));
+         //console.log("Raw overallLeadersData (Idx 1):", JSON.stringify(rawOverallLeaders, null, 2));
+        // console.log("Raw topJokerPlayersData (Idx 2):", JSON.stringify(rawTopJokers, null, 2));
+         //console.log("User Map:", userMap);
+         //console.log("--------------------------------------");
          // --- END DEBUG LOGS ---
 
 

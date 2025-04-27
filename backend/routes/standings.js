@@ -87,7 +87,7 @@ router.get('/', protect, async (req, res, next) => {
     try {
         // Determine previous round ID
         previousRoundId = await determinePreviousRoundId(requestedRoundId, db);
-        console.log(`[Standings API] PrevRoundId: ${previousRoundId} for requested: ${requestedRoundId}`);
+        //console.log(`[Standings API] PrevRoundId: ${previousRoundId} for requested: ${requestedRoundId}`);
 
         // Validate specific round request
         if (!isOverall) {
@@ -101,9 +101,9 @@ router.get('/', protect, async (req, res, next) => {
         // Fetch Previous Ranks
         let previousRanksMap = new Map();
         if (previousRoundId) {
-            console.log(`[Standings API] Fetching prev ranks for round: ${previousRoundId}`);
+            //console.log(`[Standings API] Fetching prev ranks for round: ${previousRoundId}`);
             previousRanksMap = await fetchRanksForRound(previousRoundId, db);
-            console.log(`[Standings API] Fetched ${previousRanksMap.size} prev ranks.`);
+            //console.log(`[Standings API] Fetched ${previousRanksMap.size} prev ranks.`);
         }
 
         // --- Main Standings Query ---
@@ -153,9 +153,9 @@ router.get('/', protect, async (req, res, next) => {
         `;
         // --- END MODIFIED QUERY ---
 
-        console.log(`[Standings API] Executing main query for ${isOverall ? 'Overall' : `Round ${requestedRoundId}`}`);
+        //console.log(`[Standings API] Executing main query for ${isOverall ? 'Overall' : `Round ${requestedRoundId}`}`);
         const standingsResult = await db.query(mainStandingsQuery, queryParams);
-        console.log(`[Standings API] Main query returned ${standingsResult.rows.length} rows.`);
+        //console.log(`[Standings API] Main query returned ${standingsResult.rows.length} rows.`);
 
         // --- Combine Results & Calculate Movement/Accuracy ---
         const finalStandings = standingsResult.rows.map(row => {
@@ -194,7 +194,7 @@ router.get('/', protect, async (req, res, next) => {
             };
         });
 
-        console.log(`[Standings API] Sending ${finalStandings.length} standings entries.`);
+        //console.log(`[Standings API] Sending ${finalStandings.length} standings entries.`);
         res.status(200).json(finalStandings); // Already camelCase from mapping logic
 
     } catch (error) {

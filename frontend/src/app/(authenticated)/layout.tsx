@@ -8,6 +8,7 @@ export default function AuthenticatedLayout({
 }: {
     children: React.ReactNode;
 }) {
+    //console.log("--- Rendering AuthenticatedLayout (Simplified - Layout) ---");
     return (
         // If AuthProvider doesn't wrap the root layout.tsx, you might need it here.
         // However, it's usually better practice to have it higher up in layout.tsx.

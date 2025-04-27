@@ -12,7 +12,7 @@ const path = require('path'); // Still needed for fileFilter extension check
 // Instead of saving to disk, keep the file data in memory as a buffer.
 // This buffer will be available at req.file.buffer in the route handler.
 const storage = multer.memoryStorage();
-console.log(`[Upload Middleware] Configured to use memoryStorage.`);
+//console.log(`[Upload Middleware] Configured to use memoryStorage.`);
 // -------------------------------
 
 // --- File Filter (Unchanged - Still Recommended) ---

@@ -1,7 +1,7 @@
 // backend/src/controllers/dashboardController.js
 //const prisma = require('../db.ts').default; // Adjust path: this goes from controllers up one level to src, then to db
 const dbClient = require('../db.ts').default; // Renamed import
-console.log("DB Client Initialized:", dbClient ? 'OK' : 'UNDEFINED'); // Log confirmation
+//console.log("DB Client Initialized:", dbClient ? 'OK' : 'UNDEFINED'); // Log confirmation
 
 const { Prisma } = require('@prisma/client'); // Import Prisma if needed for error types
 const { calculateStandings } = require('../utils/scoringUtils');
@@ -109,12 +109,12 @@ const createNewsItem = async (req, res) => {
 
     const adminUserId = req.user.userId;
 
-    console.log(`[createNewsItem] Value of dbClient BEFORE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
-    console.log(`[createNewsItem] Value of dbClient.newsItem BEFORE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED'); // <-- ADD LOG
+    //console.log(`[createNewsItem] Value of dbClient BEFORE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
+    //console.log(`[createNewsItem] Value of dbClient.newsItem BEFORE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED'); // <-- ADD LOG
 
     try {
-        console.log(`[createNewsItem] Value of dbClient INSIDE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
-        console.log(`[createNewsItem] Value of dbClient.newsItem INSIDE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED');
+        //console.log(`[createNewsItem] Value of dbClient INSIDE try:`, dbClient ? 'OK' : 'UNDEFINED'); // <-- ADD LOG
+        //console.log(`[createNewsItem] Value of dbClient.newsItem INSIDE try:`, dbClient?.newsItem ? 'Model OK' : 'Model UNDEFINED');
         const newsItem = await dbClient.newsItem.create({
             data: {
                 content: content.trim(),
@@ -141,15 +141,15 @@ const createNewsItem = async (req, res) => {
 
 // --- Existing getNewsItems function (simplified version) ---
 const getNewsItems = async (req, res) => {
-    console.log("Attempting to fetch news items...");
-    console.log("Value of prisma inside getNewsItems:", dbClient);
-    console.log("Value of dbClient.newsItem:", dbClient.newsItem ? 'Model OK' : 'Model UNDEFINED');
+    //console.log("Attempting to fetch news items...");
+    //console.log("Value of prisma inside getNewsItems:", dbClient);
+    //console.log("Value of dbClient.newsItem:", dbClient.newsItem ? 'Model OK' : 'Model UNDEFINED');
 
      // --- DEFINE limit HERE ---
     // Use type assertion for query param if using TypeScript, or keep as is for JS
     // Ensure 'req.query.limit' exists and handle potential type issues if using TS directly
     const limit = parseInt(req.query.limit, 10) || 5; // Default to 5 latest
-    console.log(`Fetching news with limit: ${limit}`); // Optional: Log the limit used
+    //console.log(`Fetching news with limit: ${limit}`); // Optional: Log the limit used
     // --- END DEFINE limit ---
 
     try {
@@ -167,7 +167,7 @@ const getNewsItems = async (req, res) => {
                 } // --- END INCLUDE ---
             }
         });
-        console.log("News items fetched:", newsItems);
+        //console.log("News items fetched:", newsItems);
         res.status(200).json(newsItems);
     } catch (error) {
         console.error("!!! Error in getNewsItems controller:", error);

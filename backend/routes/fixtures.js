@@ -61,7 +61,7 @@ router.put('/:fixtureId/result', protect, admin, async (req, res, next) => {
 router.delete('/:fixtureId', protect, admin, async (req, res, next) => {
     const { fixtureId } = req.params;
     const parsedFixtureId = parseInt(fixtureId, 10);
-    console.log(`Attempting to delete fixture ID: ${parsedFixtureId}`);
+    //console.log(`Attempting to delete fixture ID: ${parsedFixtureId}`);
 
     if (isNaN(parsedFixtureId)) { /* ... */ }
 
@@ -73,15 +73,15 @@ router.delete('/:fixtureId', protect, admin, async (req, res, next) => {
     try {
         await client.query('BEGIN');
         const predictionDeleteResult = await client.query('DELETE FROM predictions WHERE fixture_id = $1', [parsedFixtureId]);
-        console.log(`Deleted ${predictionDeleteResult.rowCount} prediction(s) for fixture ${parsedFixtureId}.`);
+        //console.log(`Deleted ${predictionDeleteResult.rowCount} prediction(s) for fixture ${parsedFixtureId}.`);
         const fixtureDeleteResult = await client.query('DELETE FROM fixtures WHERE fixture_id = $1', [parsedFixtureId]);
         if (fixtureDeleteResult.rowCount === 0) {
             await client.query('ROLLBACK');
-            console.log(`Delete failed: Fixture ID ${parsedFixtureId} not found.`);
+            //console.log(`Delete failed: Fixture ID ${parsedFixtureId} not found.`);
             return res.status(404).json({ message: 'Fixture not found.' });
         }
         await client.query('COMMIT');
-        console.log(`Successfully deleted fixture ID ${parsedFixtureId} and associated predictions.`);
+        //console.log(`Successfully deleted fixture ID ${parsedFixtureId} and associated predictions.`);
         res.status(204).send();
 
     } catch (error) {
@@ -126,7 +126,7 @@ router.post('/fetch-external', protect, admin, async (req, res, next) => {
         return res.status(500).json({ message: 'Server configuration error: Missing external API token.' });
     }
 
-    console.log(`[API /fixtures/fetch-external] Fetching matches for ${competitionCode} from ${dateFrom} to ${dateTo}`);
+    //console.log(`[API /fixtures/fetch-external] Fetching matches for ${competitionCode} from ${dateFrom} to ${dateTo}`);
 
     try {
         const response = await axios.get(externalApiUrl, {
@@ -158,7 +158,7 @@ router.post('/fetch-external', protect, admin, async (req, res, next) => {
              };
         }).filter(fixture => fixture !== null);
 
-        console.log(`[API /fixtures/fetch-external] Found ${potentialFixtures.length} potential fixtures for ${competitionCode}.`);
+        //console.log(`[API /fixtures/fetch-external] Found ${potentialFixtures.length} potential fixtures for ${competitionCode}.`);
         res.status(200).json(potentialFixtures);
 
     } catch (error) {

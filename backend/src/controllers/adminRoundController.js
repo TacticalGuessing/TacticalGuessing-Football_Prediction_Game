@@ -167,7 +167,7 @@ const fetchRoundResults = asyncHandler(async (req, res) => {
            // await client.query('COMMIT');
 
            // <<< LOG AFTER TRANSACTION >>>
-           console.log(`[FETCH RESULTS] Database updates transaction seemingly successful.`);
+           //console.log(`[FETCH RESULTS] Database updates transaction seemingly successful.`);
        } catch (dbError) {
            // <<< LOG DB ERROR >>>
            //console.error(`[FETCH RESULTS] Error updating fixtures in database during transaction:`, dbError);

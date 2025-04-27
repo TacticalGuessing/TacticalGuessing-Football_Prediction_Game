@@ -56,7 +56,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Effect to load token and user info from localStorage on initial mount
     useEffect(() => {
-        console.log("AuthProvider Effect: Running initial check...");
+        //console.log("AuthProvider Effect: Running initial check...");
         try {
             const storedToken = localStorage.getItem('authToken');
             const storedUserInfo = localStorage.getItem('userInfo');
@@ -67,13 +67,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 if (parsedUser && typeof parsedUser === 'object' && 'userId' in parsedUser && 'name' in parsedUser) {
                     setUser(parsedUser);
                     setToken(storedToken);
-                     console.log("AuthProvider Effect: Loaded user from localStorage", parsedUser.name);
+                     //console.log("AuthProvider Effect: Loaded user from localStorage", parsedUser.name);
                 } else {
                      console.warn("AuthProvider Effect: Parsed user info from localStorage is invalid.");
                      throw new Error("Parsed user info is invalid."); // Throw to trigger catch block
                 }
             } else {
-                 console.log("AuthProvider Effect: No token/user info in localStorage.");
+                 //console.log("AuthProvider Effect: No token/user info in localStorage.");
             }
         } catch (error) {
             console.error("AuthProvider Effect: ERROR during auth state loading:", error);
@@ -84,7 +84,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         } finally {
             // Set loading to false regardless of success/failure
             setIsLoading(false);
-            console.log("AuthProvider Effect: Initial load finished. isLoading: false");
+            //console.log("AuthProvider Effect: Initial load finished. isLoading: false");
         }
     
     }, []); // Empty dependency array ensures this runs only once on mount
@@ -104,7 +104,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
         }
 
-        console.log("AuthProvider: Fetching notification statuses...");
+        //console.log("AuthProvider: Fetching notification statuses...");
         let friendStatus = false;
         let leagueStatus = false;
 
@@ -129,9 +129,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 console.error("Error fetching pending league invites:", results[1].reason);
             }
 
-            console.log("[fetchNotificationStatus] Determined statuses -> Friends:", friendStatus, "Leagues:", leagueStatus);
+            //console.log("[fetchNotificationStatus] Determined statuses -> Friends:", friendStatus, "Leagues:", leagueStatus);
 
-            console.log("AuthProvider: Fetched Status -> Friends:", friendStatus, "Leagues:", leagueStatus);
+            //console.log("AuthProvider: Fetched Status -> Friends:", friendStatus, "Leagues:", leagueStatus);
             setHasPendingFriendRequests(friendStatus);
             setHasPendingLeagueInvites(leagueStatus);
 
@@ -151,7 +151,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
      // --- ADDED Manual refresh function ---
      const refreshNotificationStatus = useCallback(() => {
-        console.log("AuthProvider: Manual notification refresh triggered.");
+        //console.log("AuthProvider: Manual notification refresh triggered.");
         // Call fetch directly, which checks token/isLoading internally
         fetchNotificationStatus();
     
@@ -162,7 +162,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Existing login function
     const login = (userData: User, authToken: string) => {
-        console.log("AuthProvider: login called", { name: userData.name, token: '[Token]' });
+        //console.log("AuthProvider: login called", { name: userData.name, token: '[Token]' });
         try {
             localStorage.setItem('authToken', authToken);
             localStorage.setItem('userInfo', JSON.stringify(userData));
@@ -176,20 +176,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     // Existing logout function
     const logout = () => {
+        //console.log("--- LOGOUT START ---");
         console.log("AuthProvider: logout called");
-        try {
-            localStorage.removeItem('authToken');
-            localStorage.removeItem('userInfo');
-        } catch (error) {
-             console.error("AuthProvider: Error removing items from localStorage on logout:", error);
-        } finally {
-            setUser(null); setToken(null);
-            // --- Clear notification flags on logout ---
-            setHasPendingFriendRequests(false);
-            setHasPendingLeagueInvites(false);
-            // --- End Clear ---
-            router.push('/login'); // Redirect to login after state updates
-        }
+        const redirectPath = '/login';
+    
+        // --- Initiate Navigation Immediately ---
+        console.log(`AuthProvider: Pushing redirect to ${redirectPath} NOW.`);
+        router.push(redirectPath);
+    
+        // --- Delay State Clearing ---
+        // Use setTimeout to clear state slightly after navigation starts
+        setTimeout(() => {
+            console.log("AuthProvider: Clearing state via setTimeout...");
+            try {
+                localStorage.removeItem('authToken');
+                localStorage.removeItem('userInfo');
+            } catch (error) {
+                 console.error("AuthProvider: Error removing items from localStorage on logout (delayed):", error);
+            } finally {
+                setUser(null);
+                setToken(null);
+                setHasPendingFriendRequests(false);
+                setHasPendingLeagueInvites(false);
+                console.log("AuthProvider: Local state and storage cleared (delayed).");
+            }
+        }, 50); // Small delay (e.g., 50ms)
     };
 
     // Existing updateUserContext function

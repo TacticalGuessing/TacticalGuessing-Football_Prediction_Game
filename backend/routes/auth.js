@@ -50,7 +50,7 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
 
     // Generate Verification Token (before DB write)
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    console.log(`[REGISTER] New user registration request. Email: ${email.toLowerCase()}, Name: ${name}. Generated (plaintext) token: ${verificationToken.substring(0,5)}...`);
+    //console.log(`[REGISTER] New user registration request. Email: ${email.toLowerCase()}, Name: ${name}. Generated (plaintext) token: ${verificationToken.substring(0,5)}...`);
 
     let newUser = null;
     try {
@@ -91,7 +91,7 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
                 throw new Error("Server configuration error preventing password reset."); // Abort if this essential env var is missing
             }
              const verificationUrl = `${frontendUrl}/verify-email?token=${verificationToken}`; // Token now sent in query param
-             console.log(`Generated verification link (DEV ONLY): ${verificationUrl}`);
+             //console.log(`Generated verification link (DEV ONLY): ${verificationUrl}`);
 
             // Prepare Email Content (Use a dynamic HTML template for cleaner code)
             const message = `
@@ -103,13 +103,13 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
             `;
 
             // Send Email
-            console.log(`Attempting to send verification email to ${newUser.email}...`);
+            //console.log(`Attempting to send verification email to ${newUser.email}...`);
             await sendEmail({
                 to: newUser.email,
                 subject: 'Tactical Guessing - Verify Your Email',
                 html: message // Use the createMessageHTML template
             });
-            console.log(`Verification email sent successfully to ${newUser.email}`);
+            //console.log(`Verification email sent successfully to ${newUser.email}`);
 
         } catch (emailError) {
             console.error(`Failed to send verification email to ${newUser.email}:`, emailError);
@@ -118,7 +118,7 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
             try {
                  // This best-effort attempt does not justify failing the main process if *this* fails.
                  await prisma.user.update({ where: { userId: newUser.userId }, data: { emailVerificationToken: null } });
-                 console.log('Successfully cleared verification token after email failure. User can try again.');
+                 //console.log('Successfully cleared verification token after email failure. User can try again.');
             } catch (clearError) {
                 console.error("Failed to clear verification token after email failure:", clearError); // Keep logging in case something goes wrong
              }
@@ -129,7 +129,7 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
         } // Finally (to send response), moved outside to handle async logic more clearly
 
         // --- SUCCESS Response: Email Sent, Awaiting Verification ---
-        console.log(`User registered successfully: ${newUser.email} (ID: ${newUser.userId}). Awaiting email verification.`);
+        //console.log(`User registered successfully: ${newUser.email} (ID: ${newUser.userId}). Awaiting email verification.`);
         res.status(201).json({
             success: true, // Inform frontend to show a success message
             message: 'Registration successful! Please check your email to verify your account.',
@@ -148,9 +148,9 @@ router.post('/register', asyncHandler(async (req, res, next) => { // Use asyncHa
 
 // Login using Prisma Client
 router.post('/login', asyncHandler(async (req, res, next) => { // Use asyncHandler
-    console.log('--- Login Request ---');
-    console.log('Request Body:', req.body);
-    console.log('---------------------');
+    //console.log('--- Login Request ---');
+    //console.log('Request Body:', req.body);
+    //console.log('---------------------');
 
     const { email, password } = req.body;
     if (!email || !password) {
@@ -159,32 +159,32 @@ router.post('/login', asyncHandler(async (req, res, next) => { // Use asyncHandl
     }
 
     // Find user by email
-    console.log(`[Login] Attempting Prisma findUnique for email: ${email.toLowerCase()}`);
+    //console.log(`[Login] Attempting Prisma findUnique for email: ${email.toLowerCase()}`);
     const user = await prisma.user.findUnique({
         where: { email: email.toLowerCase() }
     });
-    console.log('[Login] Prisma query completed. User found:', !!user);
+    //console.log('[Login] Prisma query completed. User found:', !!user);
 
     if (!user) {
-        console.log(`[Login] Failed: User not found for email: ${email.toLowerCase()}`);
+        //console.log(`[Login] Failed: User not found for email: ${email.toLowerCase()}`);
         res.status(401); // Unauthorized
         throw new Error('Invalid credentials.');
     }
 
     // Compare password
-    console.log('[Login] User found. Comparing password...');
+    //console.log('[Login] User found. Comparing password...');
     const isMatch = await bcrypt.compare(password, user.passwordHash);
-    console.log('[Login] Password comparison result:', isMatch);
+    //console.log('[Login] Password comparison result:', isMatch);
 
     if (!isMatch) {
-        console.log(`[Login] Failed: Password mismatch for email: ${email.toLowerCase()}`);
+        //console.log(`[Login] Failed: Password mismatch for email: ${email.toLowerCase()}`);
         res.status(401); // Unauthorized
         throw new Error('Invalid credentials.');
     }
 
     // --- >>> ADD Email Verification Check <<< ---
     if (!user.emailVerified) {
-        console.log(`[Login] Failed: Email not verified for user ${user.userId} (${user.email})`);
+        //console.log(`[Login] Failed: Email not verified for user ${user.userId} (${user.email})`);
         res.status(403); // Forbidden or 401 Unauthorized are possibilities
         // Send a specific error message the frontend can check for
         throw new Error('EMAIL_NOT_VERIFIED'); // Use a specific code/message
@@ -193,14 +193,14 @@ router.post('/login', asyncHandler(async (req, res, next) => { // Use asyncHandl
     // --- >>> END Email Verification Check <<< ---
 
     // Generate JWT (Only if password matches AND email verified)
-    console.log('[Login] Password matched & email verified. Generating JWT...');
+    //console.log('[Login] Password matched & email verified. Generating JWT...');
     if (!JWT_SECRET) { throw new Error("Server configuration error: JWT_SECRET missing."); }
     const tokenPayload = {
         userId: user.userId,
         role: user.role
     };
     const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: '1d' });
-    console.log('[Login] JWT generated successfully.');
+    //console.log('[Login] JWT generated successfully.');
 
     // Send response
     res.status(200).json({
@@ -225,7 +225,7 @@ router.post('/forgot-password', asyncHandler(async (req, res, next) => {
         res.status(400);
         throw new Error('Please provide an email address');
     }
-    console.log(`Forgot password request received for email: ${email}`);
+    //console.log(`Forgot password request received for email: ${email}`);
 
     // 1. Find user by email using Prisma
     const user = await prisma.user.findUnique({
@@ -234,13 +234,13 @@ router.post('/forgot-password', asyncHandler(async (req, res, next) => {
 
     // Always send generic success response even if user not found
     if (!user) {
-        console.log(`User not found for email ${email}, sending generic response.`);
+        //console.log(`User not found for email ${email}, sending generic response.`);
         return res.status(200).json({ message: 'If an account with that email exists, a password reset link has been sent.' });
     }
 
     // 2. Generate Plain Text Reset Token
     const resetToken = crypto.randomBytes(32).toString('hex');
-    console.log(`[FORGOT PWD] Generated PLAIN TEXT token: ${resetToken}`);
+    //console.log(`[FORGOT PWD] Generated PLAIN TEXT token: ${resetToken}`);
 
     // 3. Hash token before saving
     const hashedToken = await bcrypt.hash(resetToken, SALT_ROUNDS);
@@ -256,13 +256,13 @@ router.post('/forgot-password', asyncHandler(async (req, res, next) => {
             passwordResetExpires: resetExpires,
         }
     });
-    console.log(`Reset token generated and saved for user ${user.userId}`);
+    //console.log(`Reset token generated and saved for user ${user.userId}`);
 
     // 6. Create Reset URL (using plain text token)
     const frontendUrl = process.env.FRONTEND_URL;
     if (!frontendUrl) { throw new Error('Server configuration error preventing password reset.'); }
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`; // Send PLAIN token
-    console.log(`Generated Reset URL (DEV ONLY): ${resetUrl}`);
+    //console.log(`Generated Reset URL (DEV ONLY): ${resetUrl}`);
 
     // 7. Prepare Email Content
     const message = `
@@ -294,7 +294,7 @@ router.post('/forgot-password', asyncHandler(async (req, res, next) => {
             text: plainTextMessage,
             html: message
         });
-        console.log(`Password reset email sent successfully to ${user.email}`);
+        //console.log(`Password reset email sent successfully to ${user.email}`);
     } catch (emailError) {
         console.error(`Failed to send password reset email to ${user.email}:`, emailError);
         // Attempt to clear token fields in DB so user can try again later (best effort)
@@ -323,7 +323,7 @@ router.post('/reset-password/:token', asyncHandler(async (req, res, next) => {
         res.status(400);
         throw new Error('Password is required and must be at least 6 characters long.');
     }
-    console.log(`Reset password attempt received for token (first 5 chars): ${plainTextToken.substring(0, 5)}...`);
+    //console.log(`Reset password attempt received for token (first 5 chars): ${plainTextToken.substring(0, 5)}...`);
 
     // 1. Find users with a potentially valid token (non-null, not expired)
     const potentialUsers = await prisma.user.findMany({
@@ -336,7 +336,7 @@ router.post('/reset-password/:token', asyncHandler(async (req, res, next) => {
             passwordResetToken: true
         }
     });
-    console.log(`Found ${potentialUsers.length} users with potentially valid tokens.`);
+    //console.log(`Found ${potentialUsers.length} users with potentially valid tokens.`);
 
     // 2. Iterate and compare the plain text token with the stored hash
     let user = null;
@@ -346,7 +346,7 @@ router.post('/reset-password/:token', asyncHandler(async (req, res, next) => {
             const isTokenMatch = await bcrypt.compare(plainTextToken, potentialUser.passwordResetToken);
             if (isTokenMatch) {
                 user = { userId: potentialUser.userId }; // Store only the ID, we found our match
-                console.log(`Token matched for user ID: ${user.userId}`);
+                //console.log(`Token matched for user ID: ${user.userId}`);
                 break; // Exit loop
             }
         }
@@ -354,7 +354,7 @@ router.post('/reset-password/:token', asyncHandler(async (req, res, next) => {
 
     // 3. Check if a matching user was found
     if (!user) {
-        console.log(`No user found with a valid, non-expired token matching the provided one.`);
+        //console.log(`No user found with a valid, non-expired token matching the provided one.`);
         res.status(400); // Bad Request
         throw new Error('Password reset token is invalid or has expired.');
     }
@@ -371,7 +371,7 @@ router.post('/reset-password/:token', asyncHandler(async (req, res, next) => {
             passwordResetExpires: null // Clear expiry
         }
     });
-    console.log(`Password successfully reset for user ${user.userId}`);
+    //console.log(`Password successfully reset for user ${user.userId}`);
 
     // 6. Send success response
     res.status(200).json({ message: 'Password has been reset successfully.' });

@@ -14,6 +14,7 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
+  //console.log("--- Rendering AuthenticatedLayout (Simplified - Admin Layout) ---");
   // --- State for Create Round Modal is REMOVED ---
   // const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 

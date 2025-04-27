@@ -80,7 +80,7 @@ app.use(express.json());
 
 // --- Static File Serving (Keep as is, harmless for now) ---
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
-console.log(`[Server] Serving static files from ${path.join(__dirname, 'uploads')} at /uploads`);
+//console.log(`[Server] Serving static files from ${path.join(__dirname, 'uploads')} at /uploads`);
 // ---------------------------
 
 // --- API Routes ---
@@ -119,5 +119,5 @@ app.use((err, req, res, next) => {
 
 // --- Start Server ---
 app.listen(PORT, () => {
-    console.log(`Backend server listening on port ${PORT}`);
+    //console.log(`Backend server listening on port ${PORT}`);
 });

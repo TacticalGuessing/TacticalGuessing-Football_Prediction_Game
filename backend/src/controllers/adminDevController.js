@@ -3,10 +3,10 @@
 
 const prisma = require('../db.ts').default; // <-- FIX THIS PATH to your actual Prisma client file (e.g., ../db.js)
 
-console.log('Prisma instance in adminDevController:', prisma);
+//console.log('Prisma instance in adminDevController:', prisma);
 
 const handleResetGameData = async (req, res) => { // Removed Request, Response types
-    console.log('Received request to reset game data...');
+    //console.log('Received request to reset game data...');
 
     // CRITICAL: Environment Check
     if (process.env.NODE_ENV !== 'development') {
@@ -15,14 +15,14 @@ const handleResetGameData = async (req, res) => { // Removed Request, Response t
     }
 
     try {
-        console.log('Executing data reset transaction...');
+        //console.log('Executing data reset transaction...');
         await prisma.$transaction([
             prisma.prediction.deleteMany({}),
             prisma.fixture.deleteMany({}),
             prisma.round.deleteMany({}),
         ]);
 
-        console.log('Game data reset completed successfully.');
+        //console.log('Game data reset completed successfully.');
         return res.status(200).json({ message: 'All Rounds, Fixtures, and Predictions have been deleted.' });
 
     } catch (error) {
