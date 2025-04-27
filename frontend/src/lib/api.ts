@@ -89,6 +89,10 @@ export interface Round {
     name: string;
     deadline: string; // ISO date string
     status: 'SETUP' | 'OPEN' | 'CLOSED' | 'COMPLETED';
+    jokerLimit: number;
+    createdBy?: number; // Might be camelCase 'createdByUserId' depending on mapping
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface Fixture {
@@ -1011,8 +1015,12 @@ export const createRound = async (roundData: CreateRoundPayload, token: string):
         body: roundData as unknown as BodyInit // Sending payload as is (name, deadline)
     }, token);
     const createdRaw = await response.json();
+    console.log("[API createRound] Raw response from backend:", createdRaw);
     // Map snake_case response to camelCase
-    return toCamelCase<Round>(createdRaw);
+    // Map snake_case response to camelCase
+    const mappedData = toCamelCase<Round>(createdRaw); // <<< MAP TO VARIABLE
+    console.log("[API createRound] Mapped response (camelCase):", mappedData); // <<< LOG MAPPED DATA
+    return mappedData; // <<< RETURN MAPPED VARIABL
 };
 
 /**

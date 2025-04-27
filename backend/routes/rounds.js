@@ -255,7 +255,7 @@ router.post('/import/fixtures', protect, admin, async (req, res, next) => {
 router.get('/', protect, async (req, res, next) => {
     const { status } = req.query;
     // Return minimal info needed for lists
-    let queryString = 'SELECT round_id, name, deadline, status FROM rounds';
+    let queryString = 'SELECT round_id, name, deadline, status, joker_limit FROM rounds';
     const queryParams = [];
     if (status) {
         queryString += ' WHERE status = $1';

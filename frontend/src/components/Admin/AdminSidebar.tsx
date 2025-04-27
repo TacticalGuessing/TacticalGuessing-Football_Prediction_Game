@@ -3,16 +3,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { FaTools, FaUsers, FaListOl, FaSearch, FaPlus, FaNewspaper, FaPalette } from 'react-icons/fa'; // Ensure FaPlus is imported
+import { FaTools, FaUsers, FaListOl, FaSearch, FaNewspaper, FaPalette } from 'react-icons/fa'; // Ensure FaPlus is imported
 import React from 'react';
 import { clsx } from 'clsx';
-import { Button } from '@/components/ui/Button'; // Ensure Button is imported
-import { IoFileTrayStackedOutline } from 'react-icons/io5';
 
-// Props interface includes the function to open the modal
-interface AdminSidebarProps {
-  onOpenCreateRoundModal: () => void;
-}
+import { IoFileTrayStackedOutline } from 'react-icons/io5';
 
 // NavLink interface for the navigation items
 interface NavLink {
@@ -33,7 +28,7 @@ const adminLinks: NavLink[] = [
 ];
 
 // Make the component accept the props
-export default function AdminSidebar({ onOpenCreateRoundModal }: AdminSidebarProps) {
+export default function AdminSidebar(/* Removed props: { onOpenCreateRoundModal } */) {
   const pathname = usePathname();
 
   return (
@@ -42,17 +37,9 @@ export default function AdminSidebar({ onOpenCreateRoundModal }: AdminSidebarPro
       {/* Use flex-col to position button above nav */}
       <div className="h-full px-3 py-4 overflow-y-auto flex flex-col">
 
-        {/* === START: Added Create Round Button Section === */}
-        <div className="mb-4 px-1"> {/* Add some padding/margin */}
-             <Button onClick={onOpenCreateRoundModal} className="w-full"> {/* Use the passed function */}
-                <FaPlus className="mr-2 h-4 w-4" /> {/* Use the icon */}
-                Create New Round
-             </Button>
-        </div>
-        {/* === END: Added Create Round Button Section === */}
+        
 
-        {/* Divider */}
-        <hr className="border-gray-600 dark:border-gray-700 my-2" />
+        
 
         {/* Navigation Links - Use flex-grow so nav takes remaining space */}
         <nav aria-label="Admin Navigation" className="flex-grow">

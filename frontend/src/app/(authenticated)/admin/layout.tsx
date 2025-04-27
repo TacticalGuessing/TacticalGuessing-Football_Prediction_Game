@@ -1,10 +1,11 @@
-// frontend/src/app/admin/layout.tsx
-'use client';
+// frontend/src/app/(authenticated)/admin/layout.tsx
+'use client'; // Keep 'use client' if needed for other layout logic, but not for modal state
 
-import React, { useState } from 'react';
-import AdminSidebar from '@/components/Admin/AdminSidebar'; // Adjust path if needed
-import CreateRoundModal from '@/components/Admin/CreateRoundModal';
-import { useRouter } from 'next/navigation';
+import React from 'react'; // No longer need useState
+import AdminSidebar from '@/components/Admin/AdminSidebar'; // Path is likely correct now
+// No longer need CreateRoundModal import here
+// No longer need useRouter here unless used for other layout purposes
+
 // Potentially import your main Header if it should also be present on admin pages
 // import Header from '@/components/layout/Header';
 
@@ -13,44 +14,37 @@ export default function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const router = useRouter();
-  // State for Create Round Modal visibility
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  // --- State for Create Round Modal is REMOVED ---
+  // const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
 
-  // Functions to control the modal
-  const openCreateModal = () => setIsCreateModalOpen(true);
-  const closeCreateModal = () => setIsCreateModalOpen(false);
+  // --- Functions to control the modal are REMOVED ---
+  // const openCreateModal = () => setIsCreateModalOpen(true);
+  // const closeCreateModal = () => setIsCreateModalOpen(false);
 
-  // Callback after creation (simplified - just close for now)
-  // Ideally this would trigger a refresh of the rounds list on the page
-  const handleRoundCreated = () => {
-      console.log("Round created! Need to refresh list.");
-      router.refresh();
-      // For now, just close modal. Refresh needs more state management/router events.
-      // Example: router.refresh(); // If using Next.js App Router refresh
-  };
+  // --- Callback after creation is REMOVED ---
+  // const handleRoundCreated = () => { /* ... */ };
 
 
   return (
-    <div className="flex min-h-screen bg-gray-900"> {/* Added dark bg */}
+    // Ensure container allows sidebar and main content
+    // Assuming your global layout or header handles top padding (e.g., pt-16)
+    <div className="flex min-h-screen"> {/* Removed bg-gray-900 if set globally */}
 
-      {/* Pass the function to open the modal down to the sidebar */}
-      <AdminSidebar onOpenCreateRoundModal={openCreateModal} />
+      {/* Render sidebar WITHOUT the prop */}
+      <AdminSidebar />
 
       {/* Main content area */}
-      <main className="flex-1 p-4 sm:ml-64 pt-1">
+      {/* Adjust ml-64 based on actual sidebar width */}
+      {/* Added overflow-y-auto for scrolling content */}
+      <main className="flex-1 sm:ml-64 overflow-y-auto">
+        {/* Render the page content passed as children */}
         {children}
       </main>
 
-      {/* Render the modal conditionally */}
-      <CreateRoundModal
-          isOpen={isCreateModalOpen}
-          onClose={closeCreateModal}
-          onRoundCreated={() => {
-              handleRoundCreated(); // Call the refresh handler
-              closeCreateModal(); // Ensure it closes
-          }}
-      />
+      {/* Render the modal conditionally - REMOVED */}
+      {/* The modal is now rendered within admin/page.tsx */}
+      {/* <CreateRoundModal ... /> */}
+
     </div>
   );
 }
