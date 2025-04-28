@@ -63,6 +63,8 @@ model Fixture {
   externalId     Int?      @map("external_id")
   homeTeam       String    @map("home_team")
   awayTeam       String    @map("away_team")
+  homeTeamCrestUrl String? @map("home_team_crest_url")
+  awayTeamCrestUrl String? @map("away_team_crest_url")
   matchTime      DateTime  @map("match_time")
   homeScore      Int?      @map("home_score")
   awayScore      Int?      @map("away_score")

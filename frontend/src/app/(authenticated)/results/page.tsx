@@ -3,8 +3,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { getCompletedRounds, getRoundFixtures, SimpleRound, Fixture} from '@/lib/api';
+// Ensure Fixture type includes crests, SimpleRound is correct
+import { getCompletedRounds, getRoundFixtures, SimpleRound, Fixture, ApiError } from '@/lib/api';
 import { formatDateTime } from '@/utils/formatters';
+import Image from 'next/image'; // Import Image component
 
 // --- UI Component Imports ---
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/Select";
@@ -12,14 +14,12 @@ import { Label } from '@/components/ui/Label';
 import Spinner from '@/components/ui/Spinner';
 // Import icons
 import { FaCalendarCheck, FaListAlt } from 'react-icons/fa';
-// Import Image if you were using actual badge images now
-// import Image from 'next/image';
 
 export default function ResultsPage() {
     const { token, isLoading: isAuthLoading } = useAuth();
     const [completedRounds, setCompletedRounds] = useState<SimpleRound[]>([]);
     const [selectedRoundId, setSelectedRoundId] = useState<string>('');
-    const [fixtures, setFixtures] = useState<Fixture[]>([]);
+    const [fixtures, setFixtures] = useState<Fixture[]>([]); // State holds Fixture[] which includes crests
     const [isLoadingRounds, setIsLoadingRounds] = useState(true);
     const [isLoadingFixtures, setIsLoadingFixtures] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -45,16 +45,17 @@ export default function ResultsPage() {
         const roundIdNum = parseInt(roundIdStr, 10);
         if (isNaN(roundIdNum)) { setFixtures([]); setSelectedRoundName(null); return; }
 
-        setIsLoadingFixtures(true); setError(null); setFixtures([]);
+        setIsLoadingFixtures(true); setError(null); setFixtures([]); // Clear previous fixtures
         const round = completedRounds.find(r => r.roundId === roundIdNum);
         const currentRoundName = round ? round.name : `Round ${roundIdNum}`;
         setSelectedRoundName(currentRoundName);
 
         try {
              const fixturesData = await getRoundFixtures(roundIdNum, token);
+             console.log("[ResultsPage fetchFixtures] Fetched fixtures:", fixturesData); // Log fetched data
              setFixtures(fixturesData || []);
         } catch (err: unknown) {
-             const message = err instanceof Error ? err.message : "Failed to load results.";
+             const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Failed to load results.");
              setError(`Failed to load results for ${currentRoundName}: ${message}`);
              console.error(`Error fetching fixtures for round ${roundIdNum}:`, err);
              setFixtures([]);
@@ -87,7 +88,7 @@ export default function ResultsPage() {
     };
 
     // Define container style
-    const sectionContainerClasses = "bg-gray-800 rounded-sm shadow border border-gray-700 p-4 md:p-6";
+    const sectionContainerClasses = "bg-gray-800 rounded-lg shadow border border-gray-700 p-4 md:p-6"; // Changed rounding
 
     // --- Render Logic ---
     if (isAuthLoading) return <div className="p-6 text-center text-gray-400">Loading...</div>;
@@ -101,7 +102,7 @@ export default function ResultsPage() {
             {/* Round Selector Section */}
             <div className={sectionContainerClasses}>
                 <div className="max-w-sm">
-                    <Label htmlFor="round-select-results" className="mb-1.5">Select Round:</Label>
+                    <Label htmlFor="round-select-results" className="mb-1.5 text-gray-300">Select Round:</Label> {/* Adjusted label text color */}
                     {isLoadingRounds ? <div className="flex items-center text-gray-400"><Spinner className="mr-2 h-4 w-4"/> Loading rounds...</div> : (
                         <Select
                             value={selectedRoundId}
@@ -136,51 +137,73 @@ export default function ResultsPage() {
                      )}
 
                      {isLoadingFixtures && <div className="text-center p-4 text-gray-400"><Spinner className="inline w-5 h-5 mr-2"/> Loading results...</div>}
-                     {error && <p className="text-red-400 bg-red-900/30 p-3 rounded mt-4">Error: {error}</p>}
+                     {error && <p className="text-red-400 bg-red-900/30 p-3 rounded mt-4 text-sm">Error: {error}</p>} {/* Added text-sm */}
 
                      {!isLoadingFixtures && !error && fixtures.length > 0 && (
-                         <ul className="space-y-2"> {/* Reduced vertical space between items */}
+                         <div className="space-y-3">
                             {fixtures.map(fixture => (
-                                // New layout for list items
-                                <li key={fixture.fixtureId} className="p-3 bg-gray-700/50 rounded-md border border-gray-600">
-                                    <div className="flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4">
-                                        {/* Home Team Section */}
-                                        <div className="flex items-center justify-start w-full sm:w-auto sm:flex-1">
-                                            {/* Placeholder for Home Badge */}
-                                            <span className=" h-5 w-5 mr-2 bg-gray-600 rounded-full text-xs flex items-center justify-center text-gray-400">?</span>
-                                            <span className="text-gray-100 font-medium text-sm truncate" title={fixture.homeTeam}>
-                                                {fixture.homeTeam}
-                                            </span>
-                                        </div>
+                                // Apply 12-column grid layout
+                                <div
+                                    key={fixture.fixtureId}
+                                    className="p-3 bg-gray-700/50 rounded-md border border-gray-600 grid grid-cols-12 gap-x-2 gap-y-1 items-center"
+                                >
+                                    {/* Column 1: Empty Placeholder (aligns with Joker column on predictions page) */}
+                                    <div className="col-span-1"></div>
 
-                                        {/* Score Section */}
-                                        <div className="text-base font-bold text-gray-200 whitespace-nowrap font-mono px-2 order-first sm:order-none w-full text-center sm:w-auto">
-                                            {fixture.homeScore !== null && fixture.awayScore !== null ? (
-                                                `${fixture.homeScore} - ${fixture.awayScore}`
-                                            ) : fixture.status === 'POSTPONED' || fixture.status === 'CANCELED' ? (
-                                                <span className='text-xs italic text-red-400 font-normal uppercase'>{fixture.status}</span>
-                                            ) : (
-                                                <span className='text-xs italic text-gray-500 font-normal'>TBC</span>
-                                            )}
-                                        </div>
+                                    {/* Column 2: Home Team Name & Crest */}
+                                    <div className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-100 text-left truncate pl-1 flex justify-start items-center gap-2">
+                                        {/* Home Crest */}
+                                        {fixture.homeTeamCrestUrl && (
+                                            <Image
+                                                src={fixture.homeTeamCrestUrl}
+                                                alt="" // Decorative
+                                                width={24} height={24}
+                                                className="inline-block align-middle object-contain mr-1.5"
+                                                unoptimized
+                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                            />
+                                        )}
+                                        {/* Home Team Name */}
+                                        <span title={fixture.homeTeam}>{fixture.homeTeam}</span>
+                                    </div>
 
-                                         {/* Away Team Section */}
-                                        <div className="flex items-center justify-end w-full sm:w-auto sm:flex-1 text-right">
-                                            <span className="text-gray-100 font-medium text-sm truncate" title={fixture.awayTeam}>
-                                                {fixture.awayTeam}
-                                            </span>
-                                            {/* Placeholder for Away Badge */}
-                                            <span className=" h-5 w-5 ml-2 bg-gray-600 rounded-full text-xs flex items-center justify-center text-gray-400">?</span>
-                                        </div>
+                                    {/* Column 3: Home Score */}
+                                    <div className="col-span-1 text-center text-lg font-semibold text-gray-100">
+                                         {fixture.homeScore ?? '-'}
+                                    </div>
 
-                                         {/* Date/Time Section */}
-                                        <div className="text-xs text-gray-400 whitespace-nowrap w-full text-center border-t border-gray-600 pt-2 mt-2 sm:border-0 sm:w-auto sm:text-right sm:pt-0 sm:mt-0">
-                                            {formatDateTime(fixture.matchTime)}
-                                        </div>
-                                    </div> {/* End Flex Container */}
-                                </li>
+                                    {/* Column 4: Score Separator */}
+                                    <div className="col-span-1 text-center font-semibold text-gray-400">-</div>
+
+                                    {/* Column 5: Away Score */}
+                                     <div className="col-span-1 text-center text-lg font-semibold text-gray-100">
+                                         {fixture.awayScore ?? '-'}
+                                    </div>
+
+                                    {/* Column 6: Away Team Name & Crest */}
+                                    <div className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-100 text-left truncate pr-1 flex justify-end items-center gap-2">
+                                        {/* Away Team Name */}
+                                        <span title={fixture.awayTeam}>{fixture.awayTeam}</span>
+                                         {/* Away Crest */}
+                                        {fixture.awayTeamCrestUrl && (
+                                            <Image
+                                                src={fixture.awayTeamCrestUrl}
+                                                alt="" // Decorative
+                                                width={24} height={24}
+                                                className="inline-block align-middle object-contain ml-1.5"
+                                                unoptimized
+                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                            />
+                                        )}
+                                    </div>
+
+                                    {/* Column 7: Match Time */}
+                                    <div className="col-span-12 sm:col-span-2 text-xs text-gray-400 text-center sm:text-right pt-1 sm:pt-0">
+                                        {formatDateTime(fixture.matchTime)}
+                                    </div>
+                                </div> // End Fixture Row Div
                             ))}
-                         </ul>
+                         </div> // End Fixtures Container div
                      )}
 
                      {/* No fixtures found message */}
@@ -189,7 +212,6 @@ export default function ResultsPage() {
                      )}
                  </div> // End Results Display Section
             )}
-
          </div> // End Page Container
      );
  }

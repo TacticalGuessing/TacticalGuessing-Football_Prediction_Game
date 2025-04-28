@@ -182,61 +182,79 @@ router.post('/import/fixtures', protect, admin, async (req, res, next) => {
     // --- Map and Prepare Data for Insertion ---
     // Use DB column names (snake_case) here for insertion
     const fixturesToInsert = externalData.matches
-        .filter(match => match.homeTeam?.name && match.awayTeam?.name && match.utcDate) // Basic validation
+        // Let's log the structure of one match object to be sure
+        .filter((match, index) => {
+            if (index === 0) { // Log the first match structure for debugging
+                console.log("--- Debug: First match object from API ---");
+                console.log(JSON.stringify(match, null, 2));
+                console.log("-----------------------------------------");
+            }
+            // Original filter criteria - check if names and date exist
+            const hasRequiredData = match.homeTeam?.name && match.awayTeam?.name && match.utcDate;
+            // Check if crest URLs exist (and are strings)
+            const hasHomeCrest = typeof match.homeTeam?.crest === 'string' && match.homeTeam.crest.length > 0;
+            const hasAwayCrest = typeof match.awayTeam?.crest === 'string' && match.awayTeam.crest.length > 0;
+
+            if (!hasHomeCrest || !hasAwayCrest) {
+                console.warn(`Skipping match: ${match.homeTeam?.name} vs ${match.awayTeam?.name} due to missing crest URL(s). Home: ${match.homeTeam?.crest}, Away: ${match.awayTeam?.crest}`);
+            }
+            // Keep the match only if basic data AND BOTH crests are present and valid strings
+            return hasRequiredData && hasHomeCrest && hasAwayCrest;
+        })
         .map(match => ({
-            round_id: parsedRoundId, // Use the validated integer ID
+            round_id: parsedRoundId,
             home_team: match.homeTeam.name,
             away_team: match.awayTeam.name,
+            home_team_crest_url: match.homeTeam.crest, // Assumes structure is correct
+            away_team_crest_url: match.awayTeam.crest, // Assumes structure is correct
             match_time: match.utcDate,
             status: 'SCHEDULED',
             home_score: null,
-            away_score: null
+            away_score: null,
+            external_id: match.id
         }));
 
     if (fixturesToInsert.length === 0) {
-         console.log("No valid matches found in API response after filtering.");
-         return res.status(200).json({ message: 'No valid matches found in API response to import.', count: 0 });
+         console.log("No valid matches with required data AND non-empty crest URLs found in API response after filtering.");
+         // Respond appropriately, maybe indicate that crests were missing
+         return res.status(200).json({ message: 'No valid matches with necessary data and crest URLs found in API response.', count: 0 });
     }
+    console.log(`Prepared ${fixturesToInsert.length} fixtures with crests for insertion.`);
 
-    // --- Insert Data into Database (using transaction from pool) ---
+    // --- Insert Data into Database ---
     const client = await db.pool.connect();
-     // Use pool for transaction
     try {
         await client.query('BEGIN');
-
-        // ** Behavior Decision: Append vs Replace **
-        // Option A: Append (Current implementation)
-        // Option B: Replace - Uncomment the line below
-        // console.log(`Deleting existing fixtures for round ${parsedRoundId} before import...`);
-        // const deleteResult = await client.query('DELETE FROM fixtures WHERE round_id = $1', [parsedRoundId]);
-        // console.log(`Deleted ${deleteResult.rowCount} existing fixtures.`);
-
-        let insertedCount = 0;
+        let insertedCount = 0; // Count actual successful inserts
         for (const fixture of fixturesToInsert) {
-            try {
-                 await client.query(
-                     `INSERT INTO fixtures (round_id, home_team, away_team, match_time, status, home_score, away_score)
-                      VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                     [
-                         fixture.round_id,
-                         fixture.home_team,
-                         fixture.away_team,
-                         fixture.match_time,
-                         fixture.status,
-                         fixture.home_score,
-                         fixture.away_score
-                     ]
-                 );
-                 insertedCount++;
-            } catch (insertErr) {
-                 console.error('Error inserting fixture:', fixture, insertErr);
-                 throw insertErr;
+            // Log parameters right before query
+            const queryParams = [
+                fixture.round_id,
+                fixture.home_team,
+                fixture.away_team,
+                fixture.home_team_crest_url, // Param $4
+                fixture.away_team_crest_url, // Param $5
+                fixture.match_time,
+                fixture.status,
+                fixture.home_score,
+                fixture.away_score,
+                fixture.external_id         // Param $10
+            ];
+            console.log(`Inserting fixture: ${fixture.home_team} vs ${fixture.away_team} with crests: ${fixture.home_team_crest_url}, ${fixture.away_team_crest_url}`); // Log values being inserted
+            const insertQuery = `
+                INSERT INTO fixtures (round_id, home_team, away_team, home_team_crest_url, away_team_crest_url, match_time, status, home_score, away_score, external_id)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                ON CONFLICT (round_id, home_team, away_team, match_time) DO NOTHING`;
+
+            const insertResult = await client.query(insertQuery, queryParams);
+            if (insertResult.rowCount > 0) {
+                 insertedCount++; // Only count if row was actually inserted
             }
         }
 
         await client.query('COMMIT');
-        console.log(`Successfully inserted ${insertedCount} fixtures for round ${parsedRoundId}.`);
-        res.status(201).json({ message: `Successfully imported ${insertedCount} fixtures.`, count: insertedCount });
+        console.log(`Successfully inserted ${insertedCount} new fixtures for round ${parsedRoundId}.`);
+        res.status(201).json({ message: `Successfully imported ${insertedCount} new fixtures.`, count: insertedCount });
 
     } catch (dbErr) {
         await client.query('ROLLBACK');
@@ -287,7 +305,9 @@ router.get('/active', protect, async (req, res, next) => {
         // Fetch fixtures for the active round (snake_case)
         const fixturesResult = await db.query(
             `SELECT
-                fixture_id, round_id, home_team, away_team, match_time, home_score, away_score, status
+                fixture_id, round_id, home_team, away_team,
+               home_team_crest_url, away_team_crest_url, -- <<< ADD THESE
+                match_time, home_score, away_score, status
             FROM
                 fixtures
             WHERE
@@ -331,6 +351,8 @@ router.get('/active', protect, async (req, res, next) => {
                 roundId: fixture.round_id,
                 homeTeam: fixture.home_team,
                 awayTeam: fixture.away_team,
+                homeTeamCrestUrl: fixture.home_team_crest_url, // <<< ADD MAPPING
+                awayTeamCrestUrl: fixture.away_team_crest_url, // <<< ADD MAPPING
                 matchTime: fixture.match_time,
                 homeScore: fixture.home_score,
                 awayScore: fixture.away_score,
@@ -830,6 +852,8 @@ router.get('/:roundId/fixtures', protect, async (req, res, next) => {
                 round_id,
                 home_team, -- Use DB column names
                 away_team, -- Use DB column names
+                home_team_crest_url,
+                away_team_crest_url,
                 match_time,
                 home_score,
                 away_score,
@@ -1609,29 +1633,34 @@ router.post('/:roundId/import-selected', protect, admin, async (req, res, next) 
         await client.query('BEGIN');
 
         // 3. Insert Fixtures (handle potential duplicates)
-        // --- MODIFY Insert Query ---
+        // --- MODIFY Insert Query (Same as before) ---
         const insertQuery = `
-            INSERT INTO fixtures (round_id, external_id, home_team, away_team, match_time, status)
-            VALUES ($1, $2, $3, $4, $5, 'SCHEDULED')
-            ON CONFLICT (round_id, home_team, away_team, match_time) -- Using fallback constraint
-            -- Alternative (better if you add unique constraint on externalId):
-            -- ON CONFLICT (external_id) -- Or ON CONFLICT (round_id, external_id)
+            INSERT INTO fixtures (round_id, external_id, home_team, away_team, home_team_crest_url, away_team_crest_url, match_time, status)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, 'SCHEDULED')
+            ON CONFLICT (round_id, home_team, away_team, match_time) -- Or use external_id if unique constraint exists
             DO NOTHING;
         `;
 
         let successfullyImportedCount = 0;
         for (const fixture of fixturesToImport) {
-            const result = await client.query(insertQuery, [
+            // Log the parameters being used
+            const queryParams = [
                 parsedRoundId,
-                fixture.externalId, // <<< ADD externalId here
+                fixture.externalId || null,
                 fixture.homeTeam,
                 fixture.awayTeam,
+                fixture.homeTeamCrestUrl || null, // Use value from payload
+                fixture.awayTeamCrestUrl || null, // Use value from payload
                 fixture.matchTime
-            ]);
+            ];
+            console.log(`[import-selected] Inserting ${fixture.homeTeam} vs ${fixture.awayTeam} with Crests: ${queryParams[4]}, ${queryParams[5]}`); // <<< ADD LOG HERE
+
+            const result = await client.query(insertQuery, queryParams);
             if (result.rowCount > 0) {
                 successfullyImportedCount++;
             }
         }
+        // --- END Insert Modification ---
         // --- END Insert Modification ---
 
         // 4. Commit Transaction

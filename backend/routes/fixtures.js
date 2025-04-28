@@ -144,21 +144,24 @@ router.post('/fetch-external', protect, admin, async (req, res, next) => {
              throw new Error('Received invalid data structure from external API.');
         }
 
-        // Map response to desired frontend format (camelCase)
+        // Map response to desired frontend format (camelCase) - INCLUDE CRESTS
         const potentialFixtures = response.data.matches.map(match => {
-             if (!match || !match.homeTeam || !match.awayTeam || !match.utcDate || !match.id) {
-                 console.warn(`[API /fixtures/fetch-external] Skipping match due to missing data: ${JSON.stringify(match)}`);
-                 return null;
-             }
-             return {
-                 externalId: match.id,
-                 homeTeam: match.homeTeam.name || 'N/A',
-                 awayTeam: match.awayTeam.name || 'N/A',
-                 matchTime: match.utcDate, // ISO string
-             };
-        }).filter(fixture => fixture !== null);
+            // Check for essential data including crests now
+            if (!match?.id || !match?.homeTeam?.name || !match?.awayTeam?.name || !match?.utcDate || !match?.homeTeam?.crest || !match?.awayTeam?.crest) {
+                console.warn(`[API /fixtures/fetch-external] Skipping match due to missing data (incl. crests): ${match?.homeTeam?.name} vs ${match?.awayTeam?.name}`);
+                return null; // Skip if essential data or crests are missing
+            }
+            return {
+                externalId: match.id,
+                homeTeam: match.homeTeam.name,
+                awayTeam: match.awayTeam.name,
+                homeTeamCrestUrl: match.homeTeam.crest, // <<< ADD THIS
+                awayTeamCrestUrl: match.awayTeam.crest, // <<< ADD THIS
+                matchTime: match.utcDate,
+            };
+       }).filter(fixture => fixture !== null); // Remove skipped fixtures
 
-        //console.log(`[API /fixtures/fetch-external] Found ${potentialFixtures.length} potential fixtures for ${competitionCode}.`);
+       console.log(`[API /fixtures/fetch-external] Mapped ${potentialFixtures.length} potential fixtures for ${competitionCode}.`);
         res.status(200).json(potentialFixtures);
 
     } catch (error) {

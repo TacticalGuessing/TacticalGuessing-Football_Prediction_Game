@@ -333,6 +333,7 @@ export default function AdminRoundFixturesPage() {
         setFetchError(null); setPotentialFixtures([]); setSelectedExternalIds(new Set());
         try {
             const fetchedData = await fetchExternalFixtures(token, importDateCompCode, startDate, endDate);
+            console.log("[handleFetchExternal] Data received from API:", fetchedData);
             setPotentialFixtures(fetchedData);
             if (fetchedData.length === 0) { toast.success("No fixtures found matching the criteria."); }
         } catch (err: unknown) {
@@ -350,7 +351,16 @@ export default function AdminRoundFixturesPage() {
         setIsImportingSelected(true); setError(null); setFetchError(null);
         const fixturesToSubmit = potentialFixtures
             .filter(fixture => selectedExternalIds.has(fixture.externalId))
-            .map(({ externalId, homeTeam, awayTeam, matchTime }) => ({ externalId, homeTeam, awayTeam, matchTime }));
+            .map(({ externalId, homeTeam, awayTeam, matchTime, homeTeamCrestUrl, awayTeamCrestUrl }) => ({ // <<< Destructure crests
+                               externalId,
+                               homeTeam,
+                               awayTeam,
+                               matchTime,
+                               homeTeamCrestUrl, // <<< Include crest
+                               awayTeamCrestUrl  // <<< Include crest
+                           }));
+                
+                       console.log("[handleImportSelected] Payload being sent to backend:", fixturesToSubmit);
         try {
             const result = await importSelectedFixtures(token, roundId, fixturesToSubmit);
             const successMsg = result.message || `Imported ${result.count} fixtures successfully.`;

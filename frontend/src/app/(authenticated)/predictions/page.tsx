@@ -9,7 +9,7 @@ import { useRouter } from 'next/navigation';
 import { formatDateTime } from '@/utils/formatters';
 import Image from 'next/image';
 import { Button } from '@/components/Button';
-import { FaClipboardList } from 'react-icons/fa';
+import { FaClipboardList, FaSave } from 'react-icons/fa';
 //import CountdownTimer from '@/components/CountdownTimer'; // Assuming you have this component
 // Import other necessary components like Spinner, etc.
 
@@ -42,7 +42,7 @@ export default function PredictionsPage() {
     // State for active round data
     const [activeRound, setActiveRound] = useState<ActiveRoundResponse | null>(null);
     const [predictions, setPredictions] = useState<Map<number, PredictionInput>>(new Map()); // Map fixtureId -> PredictionInput
-    
+
 
     // Loading and Error States
     const [isLoadingRound, setIsLoadingRound] = useState(true);
@@ -65,7 +65,7 @@ export default function PredictionsPage() {
             if (data) {
                 // Initialize predictions state based on fetched data
                 const initialPredictions = new Map<number, PredictionInput>();
-                
+
                 data.fixtures.forEach(fixture => {
                     initialPredictions.set(fixture.fixtureId, {
                         fixtureId: fixture.fixtureId,
@@ -75,13 +75,13 @@ export default function PredictionsPage() {
                         awayInput: fixture.predictedAwayGoals?.toString() ?? '', // Populate input string
                         isJoker: fixture.isJoker || false,
                     });
-                    
+
                 });
                 setPredictions(initialPredictions);
-                
-                 console.log('%c[PredictionsPage] Active round fetched and state initialized.', 'color: green');
+
+                console.log('%c[PredictionsPage] Active round fetched and state initialized.', 'color: green');
             } else {
-                 console.log('%c[PredictionsPage] No active round found.', 'color: orange;');
+                console.log('%c[PredictionsPage] No active round found.', 'color: orange;');
             }
         } catch (err) {
             console.error("[PredictionsPage] Error fetching active round:", err);
@@ -118,7 +118,7 @@ export default function PredictionsPage() {
             if (sanitizedValue !== '') {
                 parsedValue = parseInt(sanitizedValue, 10);
                 // Optional: Prevent excessively large numbers if desired
-                 // if (parsedValue > 99) parsedValue = 99;
+                // if (parsedValue > 99) parsedValue = 99;
             }
 
             if (team === 'home') {
@@ -138,25 +138,25 @@ export default function PredictionsPage() {
         if (!currentPrediction || !activeRound) return; // Safety checks
 
         const isCurrentlyJoker = currentPrediction.isJoker;
-       const limit = activeRound.jokerLimit;
+        const limit = activeRound.jokerLimit;
 
-       // Check limit ONLY if trying to ADD a new joker
-       if (!isCurrentlyJoker && currentJokerCount >= limit) {
-           toast.error(`Joker limit reached (${limit} allowed).`);
-           return; // Prevent selection
-       }
+        // Check limit ONLY if trying to ADD a new joker
+        if (!isCurrentlyJoker && currentJokerCount >= limit) {
+            toast.error(`Joker limit reached (${limit} allowed).`);
+            return; // Prevent selection
+        }
 
         setPredictions(prev => {
             const newPredictions = new Map(prev);
             const predictionToUpdate = newPredictions.get(fixtureId);
             if (predictionToUpdate) {
-               // Toggle the joker status for the clicked fixture
-               newPredictions.set(fixtureId, { ...predictionToUpdate, isJoker: !isCurrentlyJoker });
+                // Toggle the joker status for the clicked fixture
+                newPredictions.set(fixtureId, { ...predictionToUpdate, isJoker: !isCurrentlyJoker });
             }
-           // Remove logic that clears the previous single jokerFixtureId
+            // Remove logic that clears the previous single jokerFixtureId
             return newPredictions;
         });
-       // Remove setJokerFixtureId(fixtureId);
+        // Remove setJokerFixtureId(fixtureId);
     };
 
     // Handle Save Predictions
@@ -192,34 +192,34 @@ export default function PredictionsPage() {
         }
     };
 
-     // Handle Generate Random Predictions
-     const handleGenerateRandom = async () => {
-         if (!token || isGenerating || !activeRound) return;
+    // Handle Generate Random Predictions
+    const handleGenerateRandom = async () => {
+        if (!token || isGenerating || !activeRound) return;
 
-         setIsGenerating(true);
-         const toastId = toast.loading("Generating random predictions...");
+        setIsGenerating(true);
+        const toastId = toast.loading("Generating random predictions...");
 
-         try {
-             const result = await generateRandomUserPredictions(token);
-             toast.success(`${result.message} (${result.count} predictions generated). Refreshing...`, { id: toastId, duration: 3000 });
-             // Refetch data to show the generated predictions
-             setTimeout(fetchRoundData, 1000); // Slight delay for user to read toast
+        try {
+            const result = await generateRandomUserPredictions(token);
+            toast.success(`${result.message} (${result.count} predictions generated). Refreshing...`, { id: toastId, duration: 3000 });
+            // Refetch data to show the generated predictions
+            setTimeout(fetchRoundData, 1000); // Slight delay for user to read toast
 
-         } catch (err) {
-             console.error("[PredictionsPage] Error generating random predictions:", err);
-             const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Failed to generate predictions.");
-             toast.error(`Generation failed: ${message}`, { id: toastId });
-         } finally {
-             setIsGenerating(false);
-         }
-     };
+        } catch (err) {
+            console.error("[PredictionsPage] Error generating random predictions:", err);
+            const message = err instanceof ApiError ? err.message : (err instanceof Error ? err.message : "Failed to generate predictions.");
+            toast.error(`Generation failed: ${message}`, { id: toastId });
+        } finally {
+            setIsGenerating(false);
+        }
+    };
 
 
     // --- Render Logic ---
     if (isAuthLoading) {
         return <div className="p-6 text-center text-gray-400">Authenticating...</div>;
     }
-     if (isLoadingRound) {
+    if (isLoadingRound) {
         return <div className="p-6 text-center text-gray-400">Loading prediction round...</div>;
     }
     if (roundError) {
@@ -240,173 +240,199 @@ export default function PredictionsPage() {
 
     return (
         <div className="container mx-auto p-4 md:p-4">
-          <h1 className="text-xl md:text-2xl font-bold text-gray-100 mb-4 flex items-center"> {/* Added flex, reduced mb */}
-              <FaClipboardList className="mr-3 text-blue-400" /> {/* Added Icon */}
+            <h1 className="text-xl md:text-2xl font-bold text-gray-100 mb-4 flex items-center"> {/* Added flex, reduced mb */}
+                <FaClipboardList className="mr-3 text-blue-400" /> {/* Added Icon */}
                 Predictions: <span className="text-accent ml-2">{activeRound.name}</span> {/* Added ml-2 */}
             </h1>
-            <div className={`mb-6 rounded-lg p-4 border ${ // Keep outer container styles
-                isDeadlinePassed
-                    ? 'bg-red-900/20 border-red-700/50 text-red-300'
-                    : 'bg-gray-800/60 border-gray-700/80 text-gray-300'
-            }`}>
-                 {/* Let elements flow, use gap for spacing, consistent text size */}
-                <div className="flex items-baseline flex-wrap gap-x-2"> {/* Use items-baseline, smaller gap */}
-                    <span className="text-sm font-medium">Prediction Deadline:</span>
-                    {/* Use same text size, adjust color based on deadline */}
-                    <span className={`font-semibold text-sm ${isDeadlinePassed ? 'text-red-300' : 'text-accent'}`}>
-                         {formatDateTime(activeRound.deadline)}
-                    </span>
-                    {/* Optional: Add CountdownTimer component here */}
-                    {/* {!isDeadlinePassed && activeRound.deadline && <CountdownTimer deadline={activeRound.deadline} />} */}
+            {/* === MODIFIED Top Info Box === */}
+            <div className={`mb-6 rounded-lg p-4 border ${isDeadlinePassed ? 'bg-red-900/20 border-red-700/50 text-red-300' : 'bg-gray-800/60 border-gray-700/80 text-gray-300'} flex flex-wrap items-center justify-between gap-4`}> {/* Added flex, justify-between, items-center, gap-4 */}
+                {/* Left Side Info */}
+                <div className="space-y-1"> {/* Group deadline and joker info */}
+                    {/* Deadline Info */}
+                    <div className="flex items-baseline flex-wrap gap-x-2">
+                        <span className="text-sm font-medium">Prediction Deadline:</span>
+                        <span className={`font-semibold text-sm ${isDeadlinePassed ? 'text-red-300' : 'text-accent'}`}>
+                            {formatDateTime(activeRound.deadline)}
+                        </span>
+                    </div>
+                    {/* Joker Limit Display */}
+                    <div className="text-sm">
+                        <span>Jokers Used: </span>
+                        <span className={`font-semibold ${jokerLimitReached ? 'text-red-400' : 'text-gray-100'}`}>
+                            {currentJokerCount} / {activeRound.jokerLimit}
+                        </span>
+                    </div>
+                    {/* Deadline Passed Message (Optional: could be shown more prominently) */}
+                    {isDeadlinePassed && (
+                        <p className="mt-1 text-xs text-red-300 font-semibold italic">
+                            Predictions are now closed.
+                        </p>
+                    )}
                 </div>
-                {/* Deadline passed message */}
-                {/* Joker Limit Display */}
-               <div className="mt-1 text-sm">
-                   <span>Jokers Used: </span>
-                   <span className={`font-semibold ${jokerLimitReached ? 'text-red-400' : 'text-gray-100'}`}>
-                       {currentJokerCount} / {activeRound.jokerLimit}
-                   </span>
-               </div>
-                {isDeadlinePassed && (
-                    <p className="mt-2 text-center text-sm text-red-300 font-semibold italic">
-                        Predictions are now closed for this round.
-                    </p>
-                 )}
-            </div>
 
-            <form onSubmit={handleSave}>
-            <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 md:p-6 space-y-3">
-
-                     {/* Fixture List */}
-                     {activeRound.fixtures.map((fixture) => {
-    // Get current prediction state for this fixture
-    const currentPrediction = predictions.get(fixture.fixtureId);
-    // Determine if this fixture is the selected joker
-    const isJoker = currentPrediction?.isJoker ?? false; // New way: check map state
-
-    // Return the styled JSX for each fixture row
-    return (
-        <div
-                                    key={fixture.fixtureId}
-                                    // Default uses container bg (or bg-gray-900). Joker uses accent border + subtle accent bg.
-                                    className={`p-3 rounded-md border ${
-                                        isJoker
-                    ? 'border-yellow-500 bg-yellow-900/10 shadow-md ring-1 ring-yellow-600' // Gold highlight style
-                    : 'border-gray-700/80'
-            } grid grid-cols-12 gap-x-2 gap-y-1 items-center transition-all duration-150`}
-                                >
-            {/* Column 1: Joker Radio */}
-            <div className="col-span-1 flex justify-center items-center">
-               <button
-                   type="button"
-                   onClick={() => handleJokerChange(fixture.fixtureId)}
-                   // Disable if deadline passed OR if trying to add joker beyond limit
-                                  disabled={isSubmitDisabled || (!isJoker && jokerLimitReached)}
-                   className={`p-1 rounded-full transition-all duration-150  ${
-                       // Add disabled state for limit reached
-                                      (isSubmitDisabled || (!isJoker && jokerLimitReached))
-                                          ? 'opacity-40 cursor-not-allowed'
-                                          : 'hover:scale-110 hover:opacity-100'
-                   } ${isJoker ? 'opacity-100 scale-110' : 'opacity-60'}`} // Brighter/bigger if selected
-                   title={isJoker ? "Clear Joker" : (jokerLimitReached ? `Joker limit (${activeRound.jokerLimit}) reached` : "Set as Joker (double points)")}
-                   aria-label={isJoker ? `Clear Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}` : `Set Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}`}
-               >
-                   <Image
-                       src="/Joker.png" // Path from /public
-                       alt="Joker Card Icon"
-                       width={40} // Adjust size as needed
-                       height={40} // Adjust size as needed
-                       className={`object-contain ${isJoker ? '' : 'grayscale'}`} // Grayscale if not selected
-                   />
-               </button>
-            </div>
-
-            {/* Column 2: Home Team Name */}
-            <label htmlFor={`home-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-right truncate pr-1">
-                {fixture.homeTeam}
-            </label>
-
-            {/* Column 3: Home Score Input */}
-            <div className="col-span-1">
-                <input
-                    type="text" inputMode="numeric" pattern="[0-9]*"
-                    id={`home-${fixture.fixtureId}`}
-                    value={currentPrediction?.homeInput ?? ''}
-                    onChange={(e) => handleInputChange(fixture.fixtureId, 'home', e.target.value)}
-                    className={scoreInputClasses} // Apply themed input style
-                    maxLength={2}
-                    disabled={isSubmitDisabled}
-                    aria-label={`Predicted score for ${fixture.homeTeam}`}
-                />
-            </div>
-
-            {/* Column 4: Score Separator */}
-            <div className="col-span-1 text-center font-semibold text-gray-400">-</div>
-
-            {/* Column 5: Away Score Input */}
-            <div className="col-span-1">
-                <input
-                    type="text" inputMode="numeric" pattern="[0-9]*"
-                    id={`away-${fixture.fixtureId}`}
-                    value={currentPrediction?.awayInput ?? ''}
-                    onChange={(e) => handleInputChange(fixture.fixtureId, 'away', e.target.value)}
-                    className={scoreInputClasses} // Apply themed input style
-                    maxLength={2}
-                    disabled={isSubmitDisabled}
-                    aria-label={`Predicted score for ${fixture.awayTeam}`}
-                />
-            </div>
-
-            {/* Column 6: Away Team Name */}
-            <label htmlFor={`away-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-left truncate pl-1">
-                {fixture.awayTeam}
-            </label>
-
-            {/* Column 7: Match Time */}
-            <div className="col-span-12 sm:col-span-2 text-xs text-gray-400 text-center sm:text-right pt-1 sm:pt-0">
-                {formatDateTime(fixture.matchTime)} {/* Use formatter */}
-            </div>
-        </div> // End Fixture Row Div
-    ); // End Return for map item
-})}
-
-                     {/* Actions Area */}
-                     <div className="pt-4 flex flex-col sm:flex-row justify items-center gap-4 border-t border-gray-200">
-                         {/* Generate Random Button */}
-                         <Button // Use Button component
-                        type="button"
-                        variant="primary" // Use secondary variant (Amber)
-                        size="sm" // Make it slightly smaller? Or keep md?
+                {/* Right Side Buttons */}
+                <div className="flex items-center gap-2 flex-shrink-0"> {/* Add flex-shrink-0 */}
+                    {/* Generate Random Button */}
+                    <Button
+                        type="button" // Still type="button" as it doesn't submit the form
+                        variant="primary" // Changed variant to differentiate maybe?
+                        size="sm"
                         onClick={handleGenerateRandom}
-                        disabled={isSubmitDisabled || isGenerating} // isSubmitDisabled includes deadline check
-                        isLoading={isGenerating} // Pass loading state
-                        className="p-2" // Adjust padding if using icon only
+                        disabled={isSubmitDisabled || isGenerating}
+                        isLoading={isGenerating}
+                        className="p-2" // Keep icon-like padding
                         title="Generate Random Predictions (0-4 goals)"
                         aria-label="Generate Random Predictions"
                     >
-                         {/* Replace text/icon logic with variant from Button component */}
-                         <Image
-                             src="/Random.png" // Ensure this exists
-                             alt="" // Alt managed by title/aria-label
-                             width={20} height={20}
-                             aria-hidden="true"
-                         />
-                         <span className="sr-only">Generate Random Predictions</span>
+                        <Image
+                            src="/Random.png"
+                            alt=""
+                            width={20} height={20}
+                            aria-hidden="true"
+                        />
+                        <span className="sr-only">Generate Random Predictions</span>
                     </Button>
-                     {/* --- End Generate Random --- */}
 
-
-                    {/* Save Button - Keep as is */}
+                    {/* Save Button - Now needs type="button" and calls handleSave manually */}
                     <Button
-                        type="submit"
+                        type="button" // Changed from "submit"
                         variant="primary"
-                        size="md"
+                        size="sm" // Match size?
+                        onClick={() => handleSave()} // Call handler onClick
                         isLoading={isSaving}
                         disabled={isSubmitDisabled}
+                        title="Save your predictions" // Add title
                     >
-                         {isSaving ? 'Saving...' : 'Save Predictions'}
+                        <FaSave className="mr-1.5 h-5 w-4" /> {/* Added Save Icon */}
+                        {isSaving ? 'Saving...' : 'Save'} {/* Shorten text */}
                     </Button>
-                     </div>
+                </div>
+            </div>
+            {/* === END MODIFIED Top Info Box === */}
+
+            <form> {/* Remove onSubmit */}
+                <div className="bg-gray-800 rounded-lg shadow-lg border border-gray-700 p-4 md:p-6 space-y-3">
+
+                    {/* Fixture List */}
+                    {activeRound.fixtures.map((fixture) => {
+                        // Get current prediction state for this fixture
+                        const currentPrediction = predictions.get(fixture.fixtureId);
+                        // Determine if this fixture is the selected joker
+                        const isJoker = currentPrediction?.isJoker ?? false; // New way: check map state
+
+                        // Return the styled JSX for each fixture row
+                        return (
+                            <div
+                                key={fixture.fixtureId}
+                                // Default uses container bg (or bg-gray-900). Joker uses accent border + subtle accent bg.
+                                className={`p-3 rounded-md border ${isJoker
+                                    ? 'border-yellow-500 bg-yellow-900/10 shadow-md ring-1 ring-yellow-600' // Gold highlight style
+                                    : 'border-gray-700/80'
+                                    } grid grid-cols-12 gap-x-2 gap-y-1 items-center transition-all duration-150`}
+                            >
+                                {/* Column 1: Joker Radio */}
+                                <div className="col-span-1 flex justify-center items-center">
+                                    <button
+                                        type="button"
+                                        onClick={() => handleJokerChange(fixture.fixtureId)}
+                                        // Disable if deadline passed OR if trying to add joker beyond limit
+                                        disabled={isSubmitDisabled || (!isJoker && jokerLimitReached)}
+                                        className={`p-1 rounded-full transition-all duration-150  ${
+                                            // Add disabled state for limit reached
+                                            (isSubmitDisabled || (!isJoker && jokerLimitReached))
+                                                ? 'opacity-40 cursor-not-allowed'
+                                                : 'hover:scale-110 hover:opacity-100'
+                                            } ${isJoker ? 'opacity-100 scale-110' : 'opacity-60'}`} // Brighter/bigger if selected
+                                        title={isJoker ? "Clear Joker" : (jokerLimitReached ? `Joker limit (${activeRound.jokerLimit}) reached` : "Set as Joker (double points)")}
+                                        aria-label={isJoker ? `Clear Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}` : `Set Joker for ${fixture.homeTeam} vs ${fixture.awayTeam}`}
+                                    >
+                                        <Image
+                                            src="/Joker.png" // Path from /public
+                                            alt="Joker Card Icon"
+                                            width={40} // Adjust size as needed
+                                            height={40} // Adjust size as needed
+                                            className={`object-contain ${isJoker ? '' : 'grayscale'}`} // Grayscale if not selected
+                                        />
+                                    </button>
+                                </div>
+
+                                {/* Column 2: Home Team Name */}
+                                <label htmlFor={`home-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-left truncate pl-1 flex justify-start items-center gap-2">
+
+                                    {/* --- Moved Home Crest Before Name --- */}
+                                    {fixture.homeTeamCrestUrl && (
+                                        <Image
+                                            src={fixture.homeTeamCrestUrl}
+                                            alt="" // Decorative, label provides context
+                                            width={30} // <<< Increased size
+                                            height={24} // <<< Increased size
+                                            className="inline-block align-middle object-contain mr-1.5"
+                                            unoptimized
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        />
+                                    )}
+                                    {/* --- End Home Crest --- */}
+                                    <span>{fixture.homeTeam}</span>
+                                </label>
+
+                                {/* Column 3: Home Score Input */}
+                                <div className="col-span-1">
+                                    <input
+                                        type="text" inputMode="numeric" pattern="[0-9]*"
+                                        id={`home-${fixture.fixtureId}`}
+                                        value={currentPrediction?.homeInput ?? ''}
+                                        onChange={(e) => handleInputChange(fixture.fixtureId, 'home', e.target.value)}
+                                        className={scoreInputClasses} // Apply themed input style
+                                        maxLength={2}
+                                        disabled={isSubmitDisabled}
+                                        aria-label={`Predicted score for ${fixture.homeTeam}`}
+                                    />
+                                </div>
+
+                                {/* Column 4: Score Separator */}
+                                <div className="col-span-1 text-center font-semibold text-gray-400">-</div>
+
+                                {/* Column 5: Away Score Input */}
+                                <div className="col-span-1">
+                                    <input
+                                        type="text" inputMode="numeric" pattern="[0-9]*"
+                                        id={`away-${fixture.fixtureId}`}
+                                        value={currentPrediction?.awayInput ?? ''}
+                                        onChange={(e) => handleInputChange(fixture.fixtureId, 'away', e.target.value)}
+                                        className={scoreInputClasses} // Apply themed input style
+                                        maxLength={2}
+                                        disabled={isSubmitDisabled}
+                                        aria-label={`Predicted score for ${fixture.awayTeam}`}
+                                    />
+                                </div>
+
+                                {/* Column 6: Away Team Name */}
+                                <label htmlFor={`away-${fixture.fixtureId}`} className="col-span-4 sm:col-span-3 text-sm sm:text-base font-medium text-gray-200 text-left truncate pr-1 flex justify-end items-center gap-2">
+                                    <span>{fixture.awayTeam}</span>
+                                    {/* --- Moved Away Crest After Name --- */}
+                                    {fixture.awayTeamCrestUrl && (
+                                        <Image
+                                            src={fixture.awayTeamCrestUrl}
+                                            alt="" // Decorative
+                                            width={30} // <<< Increased size
+                                            height={30} // <<< Increased size
+                                            className="inline-block align-middle object-contain ml-1.5"
+                                            unoptimized
+                                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                        />
+                                    )}
+                                    {/* --- End Away Crest --- */}
+                                </label>
+
+                                {/* Column 7: Match Time */}
+                                <div className="col-span-12 sm:col-span-2 text-xs text-gray-400 text-center sm:text-right pt-1 sm:pt-0">
+                                    {formatDateTime(fixture.matchTime)} {/* Use formatter */}
+                                </div>
+                            </div> // End Fixture Row Div
+                        ); // End Return for map item
+                    })}
+
+
 
                 </div>
             </form>

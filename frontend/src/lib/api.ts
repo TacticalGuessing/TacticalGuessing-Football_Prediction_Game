@@ -100,6 +100,8 @@ export interface Fixture {
     roundId: number;
     homeTeam: string; // Use camelCase consistently in frontend interfaces
     awayTeam: string; // Use camelCase consistently in frontend interfaces
+    homeTeamCrestUrl?: string | null; // <<< ADD or Ensure Exists
+    awayTeamCrestUrl?: string | null; // <<< ADD or Ensure Exists
     matchTime: string; // ISO date string
     homeScore: number | null; // Use null for consistency
     awayScore: number | null; // Use null for consistency
@@ -112,6 +114,8 @@ export interface PotentialFixture {
     homeTeam: string;
     awayTeam: string;
     matchTime: string; // ISO String (UTC from football-data.org)
+    homeTeamCrestUrl?: string | null; // <<< ADD Optional Crest URL
+    awayTeamCrestUrl?: string | null; // <<< ADD Optional Crest URL
 }
 // ==========================
 
