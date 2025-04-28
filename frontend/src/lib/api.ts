@@ -34,6 +34,7 @@ export interface User {
     notifiesNewRound: boolean; // ADDED
     notifiesDeadlineReminder: boolean; // ADDED
     notifiesRoundResults: boolean;
+    
 }
 
 // --- Add Type for Update Payload ---
@@ -44,39 +45,9 @@ export interface UpdateNotificationSettingsPayload {
 }
 
 
-// Function to fetch all users for Admin panel
-export async function getAllUsersForAdmin(token: string): Promise<User[]> {
-    console.log('[api.ts] Calling getAllUsersForAdmin: /admin/users');
-    // Corrected Call: Pass options THEN token
-    const response = await fetchWithAuth('/admin/users', { method: 'GET' }, token);
-    // Check if response is ok before parsing JSON
-    if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
-        throw new ApiError(errorData?.message || `Request failed with status ${response.status}`, response.status);
-    }
-    const data = await response.json();
-    return data as User[];
-}
 
-// DELETE THE DUPLICATE getAllUsersForAdmin function HERE
 
-// Function for Admin to update a user's role
-export async function updateUserRoleAdmin(userId: number, newRole: 'PLAYER' | 'VISITOR', token: string): Promise<User> {
-    console.log(`[api.ts] Calling updateUserRoleAdmin for user ${userId} to ${newRole}`);
-    // Corrected Call: Pass options THEN token
-    const response = await fetchWithAuth(`/admin/users/${userId}/role`, {
-        method: 'PATCH',
-        // fetchWithAuth likely handles Content-Type for JSON body passed below
-        body: { role: newRole } // Pass JS object, fetchWithAuth should stringify
-    }, token);
-    // Check if response is ok before parsing JSON
-     if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to parse error response' }));
-        throw new ApiError(errorData?.message || `Request failed with status ${response.status}`, response.status);
-    }
-    const data = await response.json();
-    return data as User;
-}
+
 
 export interface AuthResponse {
     token: string;
@@ -1601,34 +1572,7 @@ export const resetGameDataForDev = async (token: string): Promise<{ message: str
 };
 // --- End Development Reset Function ---
 
-/**
- * Deletes a user (Admin only).
- */
-/**
- * Deletes a user (Admin only).
- */
-export async function deleteUserAdmin(userId: number, token: string): Promise<{ message: string }> {
-    // URL construction is correct now (relative to API_BASE_URL which includes /api)
-    const url = `${API_BASE_URL}/admin/users/${userId}`;
-    const config = {
-        headers: { Authorization: `Bearer ${token}` },
-    };
-    try {
-        // --- RESTORE THIS LINE ---
-        const response = await axios.delete<{ message: string }>(url, config);
-        // --- END RESTORE ---
 
-        return response.data; // This line makes the function return the promised value
-
-    } catch (error) {
-        console.error(`API Error deleting user ${userId}:`, error);
-        const message = axios.isAxiosError(error) && error.response?.data?.message
-            ? error.response.data.message
-            : 'Failed to delete user';
-        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
-        throw new ApiError(message, statusCode);
-    }
-}
 
 /**
  * Fetches aggregated data for the dashboard highlights section.
@@ -2356,6 +2300,66 @@ export const updateUserNotificationSettings = async (
 
     return updatedUserData;
 };
+
+/**
+ * Updates a user's email verification status (Admin only).
+ * Calls PATCH /api/admin/users/:userId/verification
+ */
+export async function updateUserVerificationAdmin(
+    userId: number,
+    isVerified: boolean,
+    token: string
+): Promise<User> { // Assuming backend returns updated User subset
+    const url = `/admin/users/${userId}/verification`; // Endpoint is under /admin/
+    const payload = { isVerified };
+    // Use fetchWithAuth from your library
+    const response = await fetchWithAuth(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    }, token);
+
+    const updatedUserDataRaw = await response.json();
+    // Assuming backend returns camelCase because Prisma does
+    return updatedUserDataRaw as User;
+}
+
+// Also ensure getAllUsersForAdmin points to the correct endpoint if it moved
+// Example: Assuming it's now GET /api/admin/users
+export async function getAllUsersForAdmin(token: string): Promise<User[]> {
+    console.log('[api.ts] Calling getAllUsersForAdmin: /admin/users');
+    const response = await fetchWithAuth('/admin/users', { method: 'GET' }, token); // Check URL
+    if (!response.ok) { /* ... error handling ... */ }
+    const data = await response.json();
+    // Assuming backend returns camelCase
+    return data as User[];
+}
+
+
+// Ensure updateUserRoleAdmin points to the correct endpoint
+export async function updateUserRoleAdmin(userId: number, newRole: 'PLAYER' | 'VISITOR', token: string): Promise<User> {
+    console.log(`[api.ts] Calling updateUserRoleAdmin for user ${userId} to ${newRole}`);
+    const response = await fetchWithAuth(`/admin/users/${userId}/role`, { // Check URL
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' }, // Add header if fetchWithAuth doesn't
+        body: JSON.stringify({ role: newRole }) // Stringify body
+    }, token);
+    if (!response.ok) { /* ... error handling ... */ }
+    const data = await response.json();
+    // Assuming backend returns camelCase
+    return data as User;
+}
+
+// Ensure deleteUserAdmin points to the correct endpoint
+export async function deleteUserAdmin(userId: number, token: string): Promise<{ message: string }> {
+    const url = `/admin/users/${userId}`; // Check URL
+    const response = await fetchWithAuth(url, { method: 'DELETE' }, token);
+    if (response.status === 204) return { message: "User deleted successfully." }; // Handle 204
+    if (!response.ok) { /* ... error handling ... */ }
+    const data = await response.json();
+    return data;
+}
+
 
 // Optional: Add function to get sent pending requests if needed
 // export async function getSentRequests(token: string): Promise<SentFriendRequest[]> { ... }

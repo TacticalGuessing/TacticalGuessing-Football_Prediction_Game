@@ -20,7 +20,8 @@ const predictionRoutes = require('./routes/predictions');
 const standingsRoutes = require('./routes/standings');
 // const fixtureRoutes = require('./routes/fixtures'); // You imported fixturesRoutes twice with different names
 const fixturesRoutes = require('./routes/fixtures'); // Use one consistent name
-const adminRoutes = require('./routes/admin');
+//const adminRoutes = require('./routes/admin');
+const adminRoutes = require('./routes/adminRoutes');
 const usersRoutes = require('./routes/users');
 const userStatsRoutes = require('./routes/userStatsRoutes');
 const userPredictionsRoutes = require('./routes/userPredictionsRoutes');
@@ -101,6 +102,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/leagues', leagueRoutes);
 app.use('/api/leagues/invites', leagueInviteRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/admin', adminRoutes);
 
 // --- Remove Optional DB Test Route (usually not needed) ---
 // app.get('/api/db-test', async (req, res, next) => { ... });

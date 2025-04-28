@@ -1,6 +1,7 @@
 // backend/src/controllers/userController.js
 const prisma = require('../db.ts').default; // Adjust path if needed
 const { Prisma } = require('@prisma/client');
+const asyncHandler = require('express-async-handler');
 
 /**
  * @desc    Search for users by name or email, excluding self and existing/pending friends
@@ -73,6 +74,8 @@ const searchUsers = async (req, res) => {
         res.status(500).json({ message: "Failed to search users." });
     }
 };
+
+
 
 
 module.exports = {
