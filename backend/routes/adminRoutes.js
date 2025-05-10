@@ -7,7 +7,8 @@ const {
     getAllUsersForAdmin,
     updateUserRoleAdmin,
     updateUserVerificationStatusAdmin,
-    deleteUserAdmin
+    deleteUserAdmin,
+    getRoundPredictionStatus
 } = require('../src/controllers/adminController'); // Adjust path if needed
 
 // Import other controllers IF admin routes for them live here too
@@ -23,6 +24,7 @@ router.get('/users', getAllUsersForAdmin);
 router.patch('/users/:userId/role', updateUserRoleAdmin);
 router.patch('/users/:userId/verification', updateUserVerificationStatusAdmin);
 router.delete('/users/:userId', deleteUserAdmin);
+router.get('/rounds/:roundId/prediction-status', getRoundPredictionStatus);
 
 // === Other Admin Routes ===
 // Example: News Management

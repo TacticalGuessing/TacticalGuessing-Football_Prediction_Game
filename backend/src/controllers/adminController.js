@@ -178,6 +178,62 @@ const deleteUserAdmin = asyncHandler(async (req, res) => {
     }
 });
 
+/**
+ * @desc    Get prediction submission status for all players for a given round (Admin)
+ * @route   GET /api/admin/rounds/:roundId/prediction-status
+ * @access  Private (Admin)
+ */
+const getRoundPredictionStatus = asyncHandler(async (req, res) => {
+    const roundId = parseInt(req.params.roundId, 10);
+
+    if (isNaN(roundId)) {
+        res.status(400);
+        throw new Error('Invalid Round ID.');
+    }
+
+    // 1. Get all users with the 'PLAYER' role
+    const players = await prisma.user.findMany({
+        where: {
+            role: 'PLAYER'
+            // Optionally, filter by isActive: true if implementing soft delete
+        },
+        select: {
+            userId: true,
+            name: true,
+            avatarUrl: true
+        }
+    });
+
+    if (players.length === 0) {
+        return res.status(200).json([]); // No players, so no status to report
+    }
+
+    // 2. Get all predictions for the given round
+    const predictionsInRound = await prisma.prediction.findMany({
+        where: {
+            roundId: roundId,
+            userId: { in: players.map(p => p.userId) } // Only consider predictions from players
+        },
+        select: {
+            userId: true // We only need to know WHO predicted
+        }
+    });
+
+    // 3. Create a set of user IDs who have predicted in this round for quick lookup
+    const usersWhoPredicted = new Set(predictionsInRound.map(p => p.userId));
+
+    // 4. Map player data to include prediction status
+    const playerStatuses = players.map(player => ({
+        userId: player.userId,
+        name: player.name,
+        avatarUrl: player.avatarUrl,
+        hasPredicted: usersWhoPredicted.has(player.userId)
+    }));
+
+    console.log(`[Admin Prediction Status] Found ${playerStatuses.length} players, ${usersWhoPredicted.size} predicted for round ${roundId}.`);
+    res.status(200).json(playerStatuses); // Returns camelCase as Prisma model fields are camelCase
+});
+
 
 // --- Export all admin functions ---
 module.exports = {
@@ -185,5 +241,6 @@ module.exports = {
     updateUserRoleAdmin,
     updateUserVerificationStatusAdmin,
     deleteUserAdmin,
+    getRoundPredictionStatus,
     // Add other admin controller functions here later (e.g., admin dashboard data)
 };

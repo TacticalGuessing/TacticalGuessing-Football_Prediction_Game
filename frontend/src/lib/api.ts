@@ -168,24 +168,32 @@ export interface UserPredictionResponse {
 // --- End User Prediction History Types ---
 
 // ========================================================
-// ===== STANDING ENTRY INTERFACE - UPDATED ===============
+// ===== STANDING ENTRY INTERFACE - ENHANCED ===============
 // ========================================================
 export interface StandingEntry {
-  rank: number;
-  userId: number; // Keep userId for potential key prop or future use
-  name: string;
-  points: number;
-  movement: number | null; // Positive (up), negative (down), or null (no change/first round)
-  totalPredictions: number; // 'Pld' column
-  correctOutcomes: number; // 'Outcome' column
-  exactScores: number; // 'Exact' column
-  accuracy: number | null; // Percentage (e.g., 75.5) or null if no predictions
-  // --- ADD THESE LINES ---
-  teamName?: string | null;  // Optional: User's chosen display name
-  avatarUrl?: string | null; // Optional: Relative path to avatar
-  // -----------------------
+    // Existing Fields
+    rank: number;
+    userId: number;
+    name: string; // User's real name
+    points: number;
+    movement: number | null;
+    totalPredictions: number; // Total predictions made in scope (overall or round)
+    correctOutcomes: number; // Correct W/D/L outcomes in scope
+    exactScores: number; // Exact scores predicted in scope << ALREADY PRESENT but verify calculation source >>
+    accuracy: number | null; // Overall W/D/L accuracy % in scope
+
+    // User Info Fields
+    teamName?: string | null;  // User's chosen display name (ensure backend sends this)
+    avatarUrl?: string | null; // User's avatar URL (ensure backend sends this)
+
+   // === NEW Player Card Stats ===
+   averagePointsPerRound: number; // Overall avg points per completed round participated in
+   roundsPlayed: number;          // Total distinct completed rounds participated in
+   bestRoundScore: number;        // Highest score achieved in a single completed round
+   totalSuccessfulJokers: number; // Total successful jokers across all completed rounds
+    // Note: totalExactScores was likely already calculated, just ensure it's the overall count now
+   // === END NEW Player Card Stats ===
 }
-// ========================================================
 // ========================================================
 
 
@@ -944,23 +952,51 @@ export const getLatestCompletedRound = async (token: string): Promise<SimpleRoun
  * Assumes backend returns camelCase for standings.
  * Pass undefined or null for roundId to get overall standings.
  */
+// --- Verify getStandings helper uses the updated type ---
 export const getStandings = async (token: string, roundId?: number | null): Promise<StandingEntry[]> => {
     const url = roundId ? `/standings?roundId=${roundId}` : '/standings';
+    console.log(`[API getStandings] Fetching from: ${url}`); // Add log
     const response = await fetchWithAuth(url, { method: 'GET' }, token);
     const rawData = await response.json();
 
-    // Backend standings endpoint now provides camelCase response directly.
      if (!Array.isArray(rawData)) {
          console.error(`API Error: GET ${url} did not return an array. Response:`, rawData);
-         return []; // Return empty array on unexpected response format
+         return [];
      }
-    // Type assertion is safe if backend contract is maintained
-    // Note: The type returned now includes the new fields defined in StandingEntry
-    return rawData as StandingEntry[];
+     console.log("[API getStandings] Raw Data Sample (first item):", rawData[0]); // <<< Log first item received
+     // Backend should now return camelCase directly from calculateStandings
+     // No explicit mapping needed here IF backend sends camelCase.
+    return rawData as StandingEntry[]; // Asserting the type matches backend structure
 };
 
 
 // == Admin Functions ==
+
+/**
+ * Fetches the prediction submission status for all players for a given round (Admin only).
+ */
+export async function getPredictionStatusAdmin(roundId: number, token: string): Promise<PlayerPredictionStatus[]> {
+    const url = `/admin/rounds/${roundId}/prediction-status`; // Correct URL
+    try {
+        const response = await fetchWithAuth(url, { method: 'GET' }, token);
+        // Add comprehensive error handling as in other functions
+        if (!response.ok) {
+            let errorMessage = `API Error: ${response.status} ${response.statusText}`;
+            try {
+                const errorData = await response.json();
+                errorMessage = errorData?.message || errorMessage;
+            } catch { /* Ignore if error body isn't JSON */ }
+            throw new ApiError(errorMessage, response.status);
+        }
+        const data = await response.json();
+        return data as PlayerPredictionStatus[];
+    } catch (error) {
+        console.error(`API Error fetching prediction status for round ${roundId}:`, error);
+        if (error instanceof ApiError) throw error;
+        // Fallback for non-ApiError types
+        throw new ApiError(error instanceof Error ? error.message : 'Could not load prediction status', 500);
+    }
+}
 
 /**
  * Fetches a list of rounds (Admin). Can optionally filter by status.
@@ -1666,27 +1702,6 @@ export async function deleteNewsItemAdmin(newsItemId: number, token: string): Pr
     }
 }
 
-/**
- * Fetches the prediction submission status for all players for a given round (Admin only).
- */
-export async function getPredictionStatusAdmin(roundId: number, token: string): Promise<PlayerPredictionStatus[]> {
-    // Assumes API_BASE_URL includes /api
-    const url = `${API_BASE_URL}/admin/rounds/${roundId}/prediction-status`;
-    const config = {
-        headers: { Authorization: `Bearer ${token}` },
-    };
-    try {
-        const response = await axios.get<PlayerPredictionStatus[]>(url, config);
-        return response.data;
-    } catch (error) {
-        console.error(`API Error fetching prediction status for round ${roundId}:`, error);
-        const message = axios.isAxiosError(error) && error.response?.data?.message
-            ? error.response.data.message
-            : 'Could not load prediction status';
-        const statusCode = axios.isAxiosError(error) ? (error.response?.status ?? 500) : 500;
-        throw new ApiError(message, statusCode);
-    }
-}
 
 /**
  * Fetches prediction statistics for the logged-in user.
