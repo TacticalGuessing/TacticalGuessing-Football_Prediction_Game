@@ -8,7 +8,9 @@ const {
     updateUserRoleAdmin,
     updateUserVerificationStatusAdmin,
     deleteUserAdmin,
-    getRoundPredictionStatus
+    getRoundPredictionStatus,
+    createNewsItemAdmin,    // <<< IMPORT
+    deleteNewsItemAdmin 
 } = require('../src/controllers/adminController'); // Adjust path if needed
 
 // Import other controllers IF admin routes for them live here too
@@ -28,8 +30,8 @@ router.get('/rounds/:roundId/prediction-status', getRoundPredictionStatus);
 
 // === Other Admin Routes ===
 // Example: News Management
-// router.post('/news', createNewsItemAdmin);
-// router.delete('/news/:newsItemId', deleteNewsItemAdmin);
+router.post('/news', createNewsItemAdmin);              // <<< ADD THIS for POST /api/admin/news
+router.delete('/news/:newsItemId', deleteNewsItemAdmin);
 
 // Example: Triggering round actions (could live here or in rounds.js)
 // router.post('/rounds/:roundId/fetch-results', fetchRoundResults); // Make sure fetchRoundResults is imported if used here

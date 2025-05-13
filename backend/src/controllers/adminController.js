@@ -234,6 +234,72 @@ const getRoundPredictionStatus = asyncHandler(async (req, res) => {
     res.status(200).json(playerStatuses); // Returns camelCase as Prisma model fields are camelCase
 });
 
+/**
+ * @desc    Create a new news item (Admin)
+ * @route   POST /api/admin/news
+ * @access  Private (Admin)
+ */
+const createNewsItemAdmin = asyncHandler(async (req, res) => {
+    const { content } = req.body;
+    const adminUserId = req.user.userId; // From protect/admin middleware
+
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+        res.status(400);
+        throw new Error('News item content cannot be empty.');
+    }
+
+    const newsItem = await prisma.newsItem.create({
+        data: {
+            content: content.trim(),
+            postedByUserId: adminUserId,
+        },
+        select: { // Select fields needed for response
+            newsItemId: true,
+            content: true,
+            createdAt: true,
+            postedBy: { select: { name: true, userId: true } }
+        }
+    });
+    console.log(`Admin ${adminUserId} created news item ${newsItem.newsItemId}`);
+    res.status(201).json(newsItem); // Return created news item
+});
+
+/**
+ * @desc    Delete a news item (Admin)
+ * @route   DELETE /api/admin/news/:newsItemId
+ * @access  Private (Admin)
+ */
+const deleteNewsItemAdminController = asyncHandler(async (req, res) => { // Renamed to avoid conflict if used elsewhere
+    const newsItemId = parseInt(req.params.newsItemId, 10);
+    const adminUserId = req.user.userId;
+
+    if (isNaN(newsItemId)) {
+        res.status(400);
+        throw new Error("Invalid news item ID.");
+    }
+
+    try {
+        const item = await prisma.newsItem.findUnique({ where: { newsItemId } });
+        if (!item) {
+            res.status(404);
+            throw new Error("News item not found.");
+        }
+
+        await prisma.newsItem.delete({
+            where: { newsItemId: newsItemId },
+        });
+
+        console.log(`Admin ${adminUserId} deleted news item ${newsItemId}`);
+        res.status(200).json({ message: "News item deleted successfully." });
+    } catch (error) {
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+            res.status(404);
+            throw new Error('News item not found.');
+        }
+        throw error; // Re-throw for global error handler
+    }
+});
+
 
 // --- Export all admin functions ---
 module.exports = {
@@ -242,5 +308,7 @@ module.exports = {
     updateUserVerificationStatusAdmin,
     deleteUserAdmin,
     getRoundPredictionStatus,
+    createNewsItemAdmin,
+    deleteNewsItemAdmin: deleteNewsItemAdminController // Export with potentially new name
     // Add other admin controller functions here later (e.g., admin dashboard data)
 };
